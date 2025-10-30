@@ -4,6 +4,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use git2::{ErrorClass, ErrorCode, Repository as GitRepository, Status, StatusOptions};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     api::{RepositoryInfo, Revision, RevisionRange, Signature, WorkspaceStatus},
@@ -11,7 +12,7 @@ use crate::{
 };
 
 /// Immutable snapshot of the repository state that Prism uses as a baseline.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositorySnapshot {
     /// Static metadata about the repository.
     pub info: RepositoryInfo,
@@ -143,6 +144,11 @@ impl Repository {
     ///
     /// Returns any error produced while resolving the HEAD commit or its
     /// parent.
+    ///
+    /// # Notes
+    ///
+    /// Merge commits currently track only the first parent; additional parents
+    /// are ignored until multi-parent diffing support lands.
     pub fn revision_range(&self) -> Result<Option<RevisionRange>> {
         let Some((reference, head)) = self.head_commit()? else {
             return Ok(None);
@@ -177,15 +183,13 @@ impl Repository {
     }
 
     fn default_branch(&self) -> Result<Option<String>> {
-        let reference = match self.inner.find_reference("refs/remotes/origin/HEAD") {
-            Ok(reference) => reference,
-            Err(err) if err.code() == ErrorCode::NotFound => return Ok(None),
-            Err(err) => return Err(Error::from(err)),
-        };
-
-        Ok(reference
-            .symbolic_target()
-            .and_then(|target| target.rsplit('/').next().map(str::to_owned)))
+        match self.inner.find_reference("refs/remotes/origin/HEAD") {
+            Ok(reference) => Ok(reference
+                .symbolic_target()
+                .and_then(|target| target.rsplit('/').next().map(str::to_owned))),
+            Err(err) if err.code() == ErrorCode::NotFound => self.current_branch(),
+            Err(err) => Err(Error::from(err)),
+        }
     }
 
     fn current_branch(&self) -> Result<Option<String>> {
