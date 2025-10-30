@@ -1,0 +1,13 @@
+[package]
+name = "prism_core"
+version = "0.1.0"
+edition = "2021"
+description = "Core library crate for the Prism macOS review app."
+publish = false
+
+[lib]
+name = "prism_core"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = "1.0"

@@ -1,1 +1,27 @@
+# macOS / Finder
+.DS_Store
+
+# Swift / Xcode artifacts
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+build/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Rust
+target/
+
+# Tooling
+.mise-local.toml
+.mise.lock
+
+# Logs
+*.log
+
 .beads/**

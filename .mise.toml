@@ -1,0 +1,18 @@
+[tools]
+rust = "stable"
+
+[tasks.build-core]
+description = "Build the Rust core library"
+run = "cargo build --manifest-path rust/prism_core/Cargo.toml --release"
+
+[tasks.test-core]
+description = "Run Rust core tests"
+run = "cargo test --manifest-path rust/prism_core/Cargo.toml"
+
+[tasks.fmt-core]
+description = "Format Rust sources"
+run = "cargo fmt --manifest-path rust/prism_core/Cargo.toml"
+
+[tasks.clippy-core]
+description = "Run Clippy on the Rust core library"
+run = "cargo clippy --manifest-path rust/prism_core/Cargo.toml --all-targets --all-features"
