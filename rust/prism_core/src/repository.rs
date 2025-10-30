@@ -182,6 +182,11 @@ impl Repository {
         })
     }
 
+    /// Internal accessor for the underlying libgit2 repository instance.
+    pub(crate) const fn git_repo(&self) -> &GitRepository {
+        &self.inner
+    }
+
     fn default_branch(&self) -> Result<Option<String>> {
         match self.inner.find_reference("refs/remotes/origin/HEAD") {
             Ok(reference) => Ok(reference

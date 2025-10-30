@@ -73,4 +73,7 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    /// Repository does not yet have a head revision to diff against.
+    #[error("repository has no head revision to diff")]
+    MissingHeadRevision,
 }

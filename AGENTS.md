@@ -11,6 +11,7 @@
 - Swift (app): open in Xcode and run locally (macOS 13+).
 - Rust (core): `cd rust/prism_core && cargo build --release`.
 - Tests: `cargo test` (Rust), `Cmd+U` in Xcode (Swift/XCTest).
+- Lint: `mise clippy-core` must pass for every change touching the Rust core.
 - Amp CLI (optional dev): `amp -h`, `amp threads list` for local verification.
 
 ## Coding Style & Naming Conventions
