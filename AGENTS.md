@@ -12,6 +12,7 @@
 - Rust (core): `cd rust/prism_core && cargo build --release`.
 - Tests: `cargo test` (Rust), `Cmd+U` in Xcode (Swift/XCTest).
 - Lint: `mise clippy-core` must pass for every change touching the Rust core.
+- UniFFI Swift bindings: `mise swift-bindings` emits generated sources into `swift/PrismFFI/Sources/PrismFFI/`.
 - Amp CLI (optional dev): `amp -h`, `amp threads list` for local verification.
 
 ## Coding Style & Naming Conventions

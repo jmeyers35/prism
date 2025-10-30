@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::path::Path;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::Path;
 
 use git2::{IndexAddOption, Repository as GitRepository};
 use prism_core::{api::diff::FileStatus, diff::DiffEngine, repository::Repository, Error, Result};

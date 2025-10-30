@@ -13,6 +13,7 @@ pub mod review;
 
 pub use diff::{
     Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange, DiffStats, FileStatus,
+    LineHighlight,
 };
 pub use repository::{RepositoryInfo, Revision, RevisionRange, Signature, WorkspaceStatus};
 pub use review::{

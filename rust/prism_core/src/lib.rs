@@ -31,13 +31,24 @@
 pub mod api;
 /// Diff generation and patching primitives.
 pub mod diff;
+/// `UniFFI` bindings and session management.
+pub mod ffi;
 /// Plugin registry and agent integration.
 pub mod plugins;
 /// Git repository access and snapshot helpers.
 pub mod repository;
 
+pub use api::{
+    Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange, DiffStats, FileStatus,
+    LineHighlight, RepositoryInfo, Revision, RevisionRange, Signature, WorkspaceStatus,
+};
+pub use repository::RepositorySnapshot;
+
 /// Common result type for the crate.
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Marker type required by `UniFFI` for scaffolding.
+pub struct UniFfiTag;
 
 /// Errors surfaced by the core library.
 #[derive(Debug, thiserror::Error)]

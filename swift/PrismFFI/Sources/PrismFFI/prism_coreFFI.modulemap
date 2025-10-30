@@ -1,0 +1,4 @@
+module prism_coreFFI {
+    header "prism_coreFFI.h"
+    export *
+}

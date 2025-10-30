@@ -1,0 +1,131 @@
+[Error]
+enum CoreError {
+  "NotARepository",
+  "BareRepository",
+  "MissingHeadRevision",
+  "Git",
+  "Io",
+  "Unimplemented",
+  "Internal"
+};
+
+[Enum]
+interface FileStatus {
+  Added();
+  Deleted();
+  Modified();
+  Renamed();
+  Copied();
+  TypeChange();
+};
+
+[Enum]
+interface DiffLineKind {
+  Context();
+  Addition();
+  Deletion();
+};
+
+dictionary Signature {
+  string name;
+  string? email;
+};
+
+dictionary Revision {
+  string oid;
+  string? reference;
+  string? summary;
+  Signature? author;
+  Signature? committer;
+  i64? timestamp;
+};
+
+dictionary RevisionRange {
+  Revision? base;
+  Revision head;
+};
+
+dictionary RepositoryInfo {
+  string root;
+  string? default_branch;
+};
+
+dictionary WorkspaceStatus {
+  string? current_branch;
+  boolean dirty;
+};
+
+dictionary RepositorySnapshot {
+  RepositoryInfo info;
+  WorkspaceStatus workspace;
+  RevisionRange? revisions;
+};
+
+dictionary DiffStats {
+  u32 additions;
+  u32 deletions;
+};
+
+dictionary DiffRange {
+  u32 base_start;
+  u32 base_lines;
+  u32 head_start;
+  u32 head_lines;
+};
+
+dictionary LineHighlight {
+  u32 start_column;
+  u32 end_column;
+};
+
+dictionary DiffLine {
+  DiffLineKind kind;
+  string text;
+  u32? base_line;
+  u32? head_line;
+  sequence<LineHighlight> highlights;
+};
+
+dictionary DiffHunk {
+  DiffRange header;
+  string? section;
+  sequence<DiffLine> lines;
+};
+
+dictionary DiffFile {
+  string path;
+  string? old_path;
+  FileStatus status;
+  DiffStats stats;
+  boolean is_binary;
+  sequence<DiffHunk> hunks;
+};
+
+dictionary Diff {
+  RevisionRange range;
+  sequence<DiffFile> files;
+};
+
+interface CoreSession {
+  [Throws=CoreError]
+  RepositorySnapshot snapshot();
+  [Throws=CoreError]
+  RepositorySnapshot refresh();
+  [Throws=CoreError]
+  RepositoryInfo repository_info();
+  [Throws=CoreError]
+  WorkspaceStatus workspace_status();
+  [Throws=CoreError]
+  Revision? head_revision();
+  [Throws=CoreError]
+  Revision? base_revision();
+  [Throws=CoreError]
+  Diff diff_head();
+  [Throws=CoreError]
+  Diff diff_for_range(RevisionRange range);
+};
+
+namespace prism_core {
+  [Throws=CoreError]
+  CoreSession open(string path);
+};

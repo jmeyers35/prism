@@ -16,3 +16,7 @@ run = "cargo fmt --manifest-path rust/prism_core/Cargo.toml"
 [tasks.clippy-core]
 description = "Run Clippy on the Rust core library"
 run = "cargo clippy --manifest-path rust/prism_core/Cargo.toml --all-targets --all-features -- -D warnings"
+
+[tasks.swift-bindings]
+description = "Generate Swift bindings from the UniFFI interface"
+run = "cargo run --manifest-path rust/prism_core/Cargo.toml --bin generate_swift"

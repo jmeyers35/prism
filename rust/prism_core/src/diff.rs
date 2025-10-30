@@ -8,6 +8,7 @@ use crate::{
     api::diff::{
         Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange, DiffStats, FileStatus,
     },
+    api::repository::RevisionRange,
     repository::Repository,
     Error, Result,
 };
@@ -34,6 +35,15 @@ impl DiffEngine {
             .revision_range()?
             .ok_or(Error::MissingHeadRevision)?;
 
+        self.diff_for_range(repository, range)
+    }
+
+    /// Generate a unified diff for an explicit revision range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either revision cannot be resolved or if git fails.
+    pub fn diff_for_range(&self, repository: &Repository, range: RevisionRange) -> Result<Diff> {
         let git_repo = repository.git_repo();
         let head_tree = commit_tree(git_repo, &range.head.oid)?;
         let base_tree = match range.base.as_ref() {
@@ -41,31 +51,7 @@ impl DiffEngine {
             None => None,
         };
 
-        let mut options = DiffOptions::new();
-        options
-            .context_lines(3)
-            .interhunk_lines(0)
-            .ignore_submodules(true)
-            .indent_heuristic(true)
-            .include_unmodified(true)
-            .include_typechange(true);
-
-        let mut raw_diff =
-            git_repo.diff_tree_to_tree(base_tree.as_ref(), Some(&head_tree), Some(&mut options))?;
-
-        let mut find_options = DiffFindOptions::new();
-        find_options
-            .renames(true)
-            .renames_from_rewrites(true)
-            .copies(true)
-            .copies_from_unmodified(true)
-            .copy_threshold(100)
-            .break_rewrites_for_renames_only(true)
-            .remove_unmodified(true);
-
-        raw_diff.find_similar(Some(&mut find_options))?;
-
-        let files = build_files(&raw_diff)?;
+        let files = generate_diff(git_repo, base_tree.as_ref(), &head_tree)?;
 
         Ok(Diff { range, files })
     }
@@ -111,6 +97,37 @@ fn build_files(diff: &git2::Diff<'_>) -> Result<Vec<DiffFile>> {
     }
 
     Ok(builder.into_inner().finish())
+}
+
+fn generate_diff(
+    repo: &git2::Repository,
+    base_tree: Option<&git2::Tree<'_>>,
+    head_tree: &git2::Tree<'_>,
+) -> Result<Vec<DiffFile>> {
+    let mut options = DiffOptions::new();
+    options
+        .context_lines(3)
+        .interhunk_lines(0)
+        .ignore_submodules(true)
+        .indent_heuristic(true)
+        .include_unmodified(true)
+        .include_typechange(true);
+
+    let mut raw_diff = repo.diff_tree_to_tree(base_tree, Some(head_tree), Some(&mut options))?;
+
+    let mut find_options = DiffFindOptions::new();
+    find_options
+        .renames(true)
+        .renames_from_rewrites(true)
+        .copies(true)
+        .copies_from_unmodified(true)
+        .copy_threshold(100)
+        .break_rewrites_for_renames_only(true)
+        .remove_unmodified(true);
+
+    raw_diff.find_similar(Some(&mut find_options))?;
+
+    build_files(&raw_diff)
 }
 
 #[derive(Default)]
