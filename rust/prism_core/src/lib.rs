@@ -7,6 +7,8 @@
 //!
 //! Follow-up tasks (prism-19, prism-5, prism-24) will flesh out the modules.
 
+pub mod api;
+
 pub mod diff;
 pub mod plugins;
 pub mod repository;
