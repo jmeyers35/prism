@@ -8,12 +8,17 @@ pub struct DiffEngine;
 
 impl DiffEngine {
     /// Construct a new diff engine instance.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 
     /// Generate a unified diff between two snapshots.
-    pub fn diff(&self) -> Result<()> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Unimplemented`] until the diff pipeline is wired up.
+    pub const fn diff(&self) -> Result<()> {
         Err(Error::Unimplemented("DiffEngine::diff"))
     }
 }

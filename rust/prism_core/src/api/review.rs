@@ -14,10 +14,11 @@ pub enum DiffSide {
 
 impl DiffSide {
     /// Map a `DiffLineKind` to the side it primarily touches.
+    #[must_use]
     pub const fn from_line_kind(kind: DiffLineKind) -> Self {
         match kind {
-            DiffLineKind::Context | DiffLineKind::Deletion => DiffSide::Base,
-            DiffLineKind::Addition => DiffSide::Head,
+            DiffLineKind::Context | DiffLineKind::Deletion => Self::Base,
+            DiffLineKind::Addition => Self::Head,
         }
     }
 }
@@ -34,6 +35,7 @@ pub struct Position {
 
 impl Position {
     /// Convenience constructor.
+    #[must_use]
     pub const fn new(line: u32, column: Option<u32>) -> Self {
         Self { line, column }
     }
@@ -50,6 +52,7 @@ pub struct Range {
 
 impl Range {
     /// Construct a range with explicit start and end.
+    #[must_use]
     pub const fn new(start: Position, end: Position) -> Self {
         Self { start, end }
     }
@@ -68,6 +71,7 @@ pub struct FileRange {
 
 impl FileRange {
     /// Create a new file range.
+    #[must_use]
     pub fn new(path: impl Into<String>, side: DiffSide, range: Range) -> Self {
         Self {
             path: path.into(),
@@ -88,6 +92,7 @@ pub struct TextEdit {
 
 impl TextEdit {
     /// Create a new text edit.
+    #[must_use]
     pub fn new(location: FileRange, replacement: impl Into<String>) -> Self {
         Self {
             location,
@@ -109,9 +114,10 @@ pub struct Suggestion {
 
 impl Suggestion {
     /// Create an empty suggestion.
+    #[must_use]
     pub fn new(title: Option<impl Into<String>>) -> Self {
         Self {
-            title: title.map(|t| t.into()),
+            title: title.map(Into::into),
             edits: Vec::new(),
         }
     }
@@ -151,6 +157,7 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     /// Convenience constructor for diagnostics without suggestions.
+    #[must_use]
     pub fn new(title: impl Into<String>, severity: Severity, location: FileRange) -> Self {
         Self {
             title: title.into(),
@@ -174,6 +181,7 @@ pub struct CommentDraft {
 
 impl CommentDraft {
     /// Create a new comment draft.
+    #[must_use]
     pub fn new(body: impl Into<String>, location: FileRange) -> Self {
         Self {
             body: body.into(),

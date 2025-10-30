@@ -15,4 +15,4 @@ run = "cargo fmt --manifest-path rust/prism_core/Cargo.toml"
 
 [tasks.clippy-core]
 description = "Run Clippy on the Rust core library"
-run = "cargo clippy --manifest-path rust/prism_core/Cargo.toml --all-targets --all-features"
+run = "cargo clippy --manifest-path rust/prism_core/Cargo.toml --all-targets --all-features -- -D warnings"

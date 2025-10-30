@@ -12,6 +12,7 @@ pub struct PluginRegistry {
 
 impl PluginRegistry {
     /// Create an empty registry.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -25,8 +26,9 @@ impl PluginRegistry {
     }
 
     /// Retrieve a plugin by identifier.
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&dyn AgentPlugin> {
-        self.plugins.get(id).map(|plugin| plugin.as_ref())
+        self.plugins.get(id).map(std::convert::AsRef::as_ref)
     }
 
     /// Returns the list of registered plugin identifiers.

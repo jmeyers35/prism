@@ -50,6 +50,7 @@ impl DiffStats {
     };
 
     /// Convenience constructor for explicit values.
+    #[must_use]
     pub const fn new(additions: u32, deletions: u32) -> Self {
         Self {
             additions,
@@ -58,6 +59,7 @@ impl DiffStats {
     }
 
     /// Combine two stats structs.
+    #[must_use]
     pub const fn add(self, other: Self) -> Self {
         Self {
             additions: self.additions + other.additions,
