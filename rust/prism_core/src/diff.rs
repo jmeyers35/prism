@@ -9,7 +9,7 @@ pub struct DiffEngine;
 impl DiffEngine {
     /// Construct a new diff engine instance.
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     /// Generate a unified diff between two snapshots.
