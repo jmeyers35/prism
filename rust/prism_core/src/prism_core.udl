@@ -6,7 +6,9 @@ enum CoreError {
   "Git",
   "Io",
   "Unimplemented",
-  "Internal"
+  "Internal",
+  "PluginNotRegistered",
+  "Plugin"
 };
 
 [Enum]
@@ -106,6 +108,108 @@ dictionary Diff {
   sequence<DiffFile> files;
 };
 
+[Enum]
+interface Severity {
+  Info();
+  Warning();
+  Error();
+};
+
+[Enum]
+interface DiffSide {
+  Base();
+  Head();
+};
+
+dictionary Position {
+  u32 line;
+  u32? column;
+};
+
+dictionary Range {
+  Position start;
+  Position end;
+};
+
+dictionary FileRange {
+  string path;
+  DiffSide side;
+  Range range;
+};
+
+dictionary TextEdit {
+  FileRange location;
+  string replacement;
+};
+
+dictionary Suggestion {
+  string? title;
+  sequence<TextEdit> edits;
+};
+
+dictionary Diagnostic {
+  string title;
+  string? detail;
+  Severity severity;
+  FileRange location;
+  sequence<string> tags;
+  sequence<Suggestion> suggestions;
+};
+
+dictionary CommentDraft {
+  string body;
+  FileRange location;
+};
+
+dictionary ThreadRef {
+  string id;
+  string? title;
+};
+
+dictionary PluginCapabilities {
+  boolean supports_list_threads;
+  boolean supports_attach_without_thread;
+  boolean supports_polling;
+};
+
+dictionary PluginSummary {
+  string id;
+  string label;
+  PluginCapabilities capabilities;
+};
+
+dictionary PluginSession {
+  string plugin_id;
+  string session_id;
+  ThreadRef? thread;
+};
+
+dictionary ReviewPayload {
+  string? summary;
+  sequence<string> actions;
+  sequence<CommentDraft> comments;
+  sequence<Diagnostic> diagnostics;
+};
+
+dictionary SubmissionResult {
+  boolean revision_started;
+  string? reference;
+  string? message;
+};
+
+[Enum]
+interface RevisionState {
+  Pending();
+  InProgress();
+  Completed();
+  Failed();
+};
+
+dictionary RevisionProgress {
+  RevisionState state;
+  string? detail;
+};
+
 interface CoreSession {
   [Throws=CoreError]
   RepositorySnapshot snapshot();
@@ -123,6 +227,15 @@ interface CoreSession {
   Diff diff_head();
   [Throws=CoreError]
   Diff diff_for_range(RevisionRange range);
+  sequence<PluginSummary> plugins();
+  [Throws=CoreError]
+  sequence<ThreadRef> plugin_threads(string plugin_id);
+  [Throws=CoreError]
+  PluginSession attach_plugin(string plugin_id, string? thread_id);
+  [Throws=CoreError]
+  SubmissionResult post_review(PluginSession session, ReviewPayload payload);
+  [Throws=CoreError]
+  RevisionProgress poll_revision(PluginSession session);
 };
 
 namespace prism_core {

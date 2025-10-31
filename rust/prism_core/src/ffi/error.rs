@@ -28,6 +28,12 @@ pub enum CoreError {
     /// Internal invariant failed.
     #[error("internal error")]
     Internal,
+    /// Plugin was not registered with the core.
+    #[error("plugin is not registered")]
+    PluginNotRegistered,
+    /// Plugin failed to handle the request.
+    #[error("plugin error")]
+    Plugin,
 }
 
 impl From<Error> for CoreError {
@@ -39,6 +45,8 @@ impl From<Error> for CoreError {
             Error::BareRepository { .. } => Self::BareRepository,
             Error::Io { .. } => Self::Io,
             Error::MissingHeadRevision => Self::MissingHeadRevision,
+            Error::PluginNotRegistered { .. } => Self::PluginNotRegistered,
+            Error::Plugin { .. } => Self::Plugin,
         }
     }
 }

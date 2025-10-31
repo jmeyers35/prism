@@ -14,9 +14,11 @@ pub use session::{open, CoreSession};
 mod scaffolding {
     use super::{open, CoreError, CoreSession};
     use crate::{
-        Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange, DiffStats, FileStatus,
-        LineHighlight, RepositoryInfo, RepositorySnapshot, Revision, RevisionRange, Signature,
-        WorkspaceStatus,
+        CommentDraft, Diagnostic, Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange,
+        DiffSide, DiffStats, FileRange, FileStatus, LineHighlight, PluginCapabilities,
+        PluginSession, PluginSummary, Position, Range, RepositoryInfo, RepositorySnapshot,
+        ReviewPayload, Revision, RevisionProgress, RevisionRange, RevisionState, Severity,
+        Signature, SubmissionResult, Suggestion, TextEdit, ThreadRef, WorkspaceStatus,
     };
 
     uniffi::include_scaffolding!("prism_core");

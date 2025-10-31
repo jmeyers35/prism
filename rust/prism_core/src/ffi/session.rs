@@ -2,6 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     diff::DiffEngine,
+    plugins::{
+        PluginRegistry, PluginService, PluginSession, PluginSummary, ReviewPayload,
+        RevisionProgress, SubmissionResult, ThreadRef,
+    },
     repository::{Repository, RepositorySnapshot},
     Diff, RepositoryInfo, Revision, RevisionRange, WorkspaceStatus,
 };
@@ -15,14 +19,18 @@ type Result<T> = std::result::Result<T, CoreError>;
 pub struct CoreSession {
     repository: Arc<Mutex<Repository>>,
     diff_engine: DiffEngine,
+    plugins: Arc<PluginService>,
 }
 
 impl CoreSession {
     /// Construct a session for the provided repository path.
     fn new(repository: Repository) -> Self {
+        let registry = PluginRegistry::with_defaults();
+        let plugin_service = PluginService::new(registry);
         Self {
             repository: Arc::new(Mutex::new(repository)),
             diff_engine: DiffEngine::new(),
+            plugins: Arc::new(plugin_service),
         }
     }
 
@@ -99,6 +107,68 @@ impl CoreSession {
         let repository = self.repository.lock().map_err(CoreError::from)?;
         self.diff_engine
             .diff_for_range(&repository, range)
+            .map_err(CoreError::from)
+    }
+
+    /// List registered plugin summaries for UI presentation.
+    #[must_use]
+    pub fn plugins(&self) -> Vec<PluginSummary> {
+        self.plugins.summaries()
+    }
+
+    /// Enumerate threads for a specific plugin.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::PluginNotRegistered`] or wraps plugin failures.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn plugin_threads(&self, plugin_id: String) -> Result<Vec<ThreadRef>> {
+        self.plugins
+            .list_threads(&plugin_id)
+            .map_err(CoreError::from)
+    }
+
+    /// Attach to a plugin session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::PluginNotRegistered`] or surfaces plugin failures.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn attach_plugin(
+        &self,
+        plugin_id: String,
+        thread_id: Option<String>,
+    ) -> Result<PluginSession> {
+        self.plugins
+            .attach(&plugin_id, thread_id.as_deref())
+            .map_err(CoreError::from)
+    }
+
+    /// Post review payload through the plugin session.
+    ///
+    /// # Errors
+    ///
+    /// Propagates plugin-originated failures.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn post_review(
+        &self,
+        session: PluginSession,
+        payload: ReviewPayload,
+    ) -> Result<SubmissionResult> {
+        self.plugins
+            .post_review(&session, payload)
+            .map_err(CoreError::from)
+    }
+
+    /// Poll revision status for the given session.
+    ///
+    /// # Errors
+    ///
+    /// Propagates plugin-originated failures.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn poll_revision(&self, session: PluginSession) -> Result<RevisionProgress> {
+        self.plugins
+            .poll_revision(&session)
             .map_err(CoreError::from)
     }
 

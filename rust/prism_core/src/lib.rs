@@ -39,8 +39,14 @@ pub mod plugins;
 pub mod repository;
 
 pub use api::{
-    Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange, DiffStats, FileStatus,
-    LineHighlight, RepositoryInfo, Revision, RevisionRange, Signature, WorkspaceStatus,
+    CommentDraft, Diagnostic, Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange,
+    DiffSide, DiffStats, FileRange, FileStatus, LineHighlight, Position, Range, RepositoryInfo,
+    ReviewComment, ReviewThread, Revision, RevisionRange, Severity, Signature, Suggestion,
+    TextEdit, WorkspaceStatus,
+};
+pub use plugins::{
+    PluginCapabilities, PluginRegistry, PluginService, PluginSession, PluginSummary, ReviewPayload,
+    RevisionProgress, RevisionState, SubmissionResult, ThreadRef,
 };
 pub use repository::RepositorySnapshot;
 
@@ -87,4 +93,19 @@ pub enum Error {
     /// Repository does not yet have a head revision to diff against.
     #[error("repository has no head revision to diff")]
     MissingHeadRevision,
+    /// Requested plugin is not registered.
+    #[error("plugin '{plugin}' is not registered")]
+    PluginNotRegistered {
+        /// Identifier of the missing plugin.
+        plugin: String,
+    },
+    /// Plugin surfaced an error while handling the request.
+    #[error("plugin '{plugin}' failed: {source}")]
+    Plugin {
+        /// Identifier of the plugin that produced the error.
+        plugin: String,
+        /// Wrapped plugin error.
+        #[source]
+        source: plugins::PluginError,
+    },
 }
