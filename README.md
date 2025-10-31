@@ -87,6 +87,11 @@ Prism sends this JSON in the review message (inline or as JSONL content). Anchor
   - Open the Xcode project (to be added) and run on macOS.
   - Dependencies via Swift Package Manager: SwiftGit2 (+ bundled libgit2).
 
+### Rust FFI bindings
+- `mise swift-bindings` regenerates the UniFFI Swift glue code under `swift/PrismFFI/Sources/PrismFFI/`.
+- `mise build-xcframework` builds an arm64-only `PrismCoreFFI.xcframework` in `swift/PrismFFI/` for consumption via Swift Package Manager. Run `rustup target add aarch64-apple-darwin` once before invoking if the target is missing. (Intel support will be added later if needed.)
+- Add `swift/PrismFFI` as a local Swift package in Xcode to pull in the binary target and generated Swift wrapper.
+
 ## Performance
 - Lazy‑load file diffs; virtualize long files; cache parsed hunks.
 - Soft cap large files (e.g., skip >500KB unless expanded) to keep the UI responsive.

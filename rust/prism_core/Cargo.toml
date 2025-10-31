@@ -12,6 +12,7 @@ uniffi_build = "0.28"
 [lib]
 name = "prism_core"
 path = "src/lib.rs"
+crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 anyhow = "1.0"

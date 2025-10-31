@@ -20,3 +20,7 @@ run = "cargo clippy --manifest-path rust/prism_core/Cargo.toml --all-targets --a
 [tasks.swift-bindings]
 description = "Generate Swift bindings from the UniFFI interface"
 run = "cargo run --manifest-path rust/prism_core/Cargo.toml --bin generate_swift"
+
+[tasks.build-xcframework]
+description = "Build the universal xcframework for the Rust core"
+run = "./scripts/build-xcframework.sh"

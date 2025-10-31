@@ -9,6 +9,8 @@ import Foundation
 // this module. This is a bit of light hackery to work with both.
 #if canImport(prism_coreFFI)
     import prism_coreFFI
+#elseif canImport(PrismCoreFFI)
+    import PrismCoreFFI
 #endif
 
 private extension RustBuffer {
