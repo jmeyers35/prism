@@ -91,6 +91,12 @@ Prism sends this JSON in the review message (inline or as JSONL content). Anchor
 - `mise swift-bindings` regenerates the UniFFI Swift glue code under `swift/PrismFFI/Sources/PrismFFI/`.
 - `mise build-xcframework` builds an arm64-only `PrismCoreFFI.xcframework` in `swift/PrismFFI/` for consumption via Swift Package Manager. Run `rustup target add aarch64-apple-darwin` once before invoking if the target is missing. (Intel support will be added later if needed.)
 - Add `swift/PrismFFI` as a local Swift package in Xcode to pull in the binary target and generated Swift wrapper.
+- Use `PrismCoreClient` to open repositories asynchronously from SwiftUI. For example:
+  ```swift
+  let client = PrismCoreClient()
+  let session = try await client.openSession(at: url)
+  let snapshot = try await session.snapshot()
+  ```
 
 ## Performance
 - Lazy‑load file diffs; virtualize long files; cache parsed hunks.

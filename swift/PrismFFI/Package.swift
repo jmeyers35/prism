@@ -24,8 +24,18 @@ let package = Package(
             ],
             path: "Sources/PrismFFI",
             sources: [
-                "prism_core.swift"
+                "prism_core.swift",
+                "PrismCoreClient.swift"
+            ],
+            linkerSettings: [
+                .linkedLibrary("z"),
+                .linkedLibrary("iconv")
             ]
+        ),
+        .testTarget(
+            name: "PrismFFITests",
+            dependencies: ["PrismFFI"],
+            path: "Tests/PrismFFITests"
         )
     ]
 )

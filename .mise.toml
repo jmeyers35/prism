@@ -24,3 +24,11 @@ run = "cargo run --manifest-path rust/prism_core/Cargo.toml --bin generate_swift
 [tasks.build-xcframework]
 description = "Build the universal xcframework for the Rust core"
 run = "./scripts/build-xcframework.sh"
+
+[tasks.test-swift]
+description = "Run Swift PrismFFI tests"
+run = "swift test --package-path swift/PrismFFI"
+
+[tasks.test]
+description = "Run all tests (Rust core + Swift FFI)"
+run = "cargo test --manifest-path rust/prism_core/Cargo.toml && swift test --package-path swift/PrismFFI"
