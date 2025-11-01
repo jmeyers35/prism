@@ -8,14 +8,22 @@ final class SessionStore: ObservableObject {
   @Published private(set) var phase: SessionPhase = .idle
   @Published private(set) var diffPhase: DiffPhase = .idle
   @Published var selectedDiffFileID: DiffFileViewModel.ID?
+  @Published private(set) var storedSessions: [StoredSession] = []
 
   private let client: any PrismSessionClient
+  private let storage: any SessionPersisting
   private var activeSession: (any PrismSession)?
   private var loadIdentifier: UUID?
   private var diffLoadIdentifier: UUID?
 
-  init(client: any PrismSessionClient = PrismCoreClientAdapter()) {
+  init(
+    client: any PrismSessionClient = PrismCoreClientAdapter(),
+    storage: (any SessionPersisting)? = nil
+  ) {
     self.client = client
+    let storageInstance = storage ?? SessionStorage()
+    self.storage = storageInstance
+    self.storedSessions = (try? storageInstance.fetchSessions()) ?? []
   }
 
   func presentRepositoryPicker() {
@@ -54,7 +62,9 @@ final class SessionStore: ObservableObject {
       guard loadIdentifier == ticket else { return }
 
       activeSession = session
-      phase = .ready(makeViewModel(info: info, status: status))
+      let viewModel = makeViewModel(info: info, status: status)
+      phase = .ready(viewModel)
+      persistSession(viewModel)
       let sessionID = ObjectIdentifier(session as AnyObject)
       await loadDiff(for: session, sessionID: sessionID, preferredSelection: nil)
       guard loadIdentifier == ticket else { return }
@@ -98,7 +108,9 @@ final class SessionStore: ObservableObject {
       guard let currentSession = activeSession else { return }
       guard ObjectIdentifier(currentSession as AnyObject) == expectedSessionID else { return }
 
-      phase = .ready(makeViewModel(info: info, status: status))
+      let viewModel = makeViewModel(info: info, status: status)
+      phase = .ready(viewModel)
+      persistSession(viewModel)
       await loadDiff(for: session, sessionID: expectedSessionID, preferredSelection: selectedDiffFileID)
     } catch {
       guard loadIdentifier == expectedLoadIdentifier else { return }
@@ -117,6 +129,16 @@ final class SessionStore: ObservableObject {
 
   func hasActiveSession() -> Bool {
     activeSession != nil
+  }
+
+  func removeStoredSession(id: UUID) {
+    do {
+      try storage.deleteSession(id: id)
+      storedSessions = try storage.fetchSessions()
+    } catch {
+      NSLog("Failed to delete stored session: \(error)")
+      assertionFailure("Failed to delete stored session: \(error)")
+    }
   }
 
   private func loadDiff(
@@ -192,6 +214,16 @@ final class SessionStore: ObservableObject {
       currentBranch: status.currentBranch,
       hasUncommittedChanges: status.dirty
     )
+  }
+
+  private func persistSession(_ viewModel: SessionViewModel, openedAt date: Date = Date()) {
+    do {
+      _ = try storage.upsertSession(from: viewModel, openedAt: date)
+      storedSessions = try storage.fetchSessions()
+    } catch {
+      NSLog("Failed to persist session: \(error)")
+      assertionFailure("Failed to persist session: \(error)")
+    }
   }
 }
 

@@ -105,7 +105,9 @@ private struct ErrorView: View {
   enum SessionStorePreviewFactory {
     @MainActor
     static func readyStore() -> SessionStore {
-      let store = SessionStore(client: MockPreviewClient())
+      let persistence = PersistenceController.preview
+      let storage = SessionStorage(controller: persistence)
+      let store = SessionStore(client: MockPreviewClient(), storage: storage)
       store.injectPreviewState(
         phase: .ready(
           SessionViewModel(

@@ -19,7 +19,10 @@ let package = Package(
       dependencies: [
         .product(name: "PrismFFI", package: "PrismFFI")
       ],
-      path: "Sources"
+      path: "Sources",
+      resources: [
+        .process("PrismApp/Resources")
+      ]
     ),
     .testTarget(
       name: "PrismAppTests",

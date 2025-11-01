@@ -4,6 +4,11 @@ import PrismFFI
 
 @MainActor
 final class SessionStoreTests: XCTestCase {
+  private func makeStore(client: MockSessionClient) -> SessionStore {
+    let storage = InMemorySessionPersistence()
+    return SessionStore(client: client, storage: storage)
+  }
+
   func testOpenSessionSuccess() async throws {
     let session = MockSession(
       info: RepositoryInfo(root: "/tmp/prism", defaultBranch: "main"),
@@ -11,7 +16,7 @@ final class SessionStoreTests: XCTestCase {
     )
 
     let client = MockSessionClient(responses: [.success(session)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
@@ -35,7 +40,7 @@ final class SessionStoreTests: XCTestCase {
 
   func testOpenSessionFailure() async {
     let client = MockSessionClient(responses: [.failure(MockError.notRepository)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/invalid"))
 
@@ -55,7 +60,7 @@ final class SessionStoreTests: XCTestCase {
     )
 
     let client = MockSessionClient(responses: [.success(session)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
@@ -97,7 +102,7 @@ final class SessionStoreTests: XCTestCase {
     }
 
     let client = MockSessionClient(responses: [.success(session)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
@@ -135,7 +140,7 @@ final class SessionStoreTests: XCTestCase {
     )
 
     let client = MockSessionClient(responses: [.success(sessionA), .success(sessionB)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/repoA"))
 
@@ -165,7 +170,7 @@ final class SessionStoreTests: XCTestCase {
     )
 
     let client = MockSessionClient(responses: [.success(initialSession)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
@@ -198,7 +203,7 @@ final class SessionStoreTests: XCTestCase {
     session.headDiffResponses = [.failure(MockError.transient)]
 
     let client = MockSessionClient(responses: [.success(session)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
@@ -229,7 +234,7 @@ final class SessionStoreTests: XCTestCase {
     ]
 
     let client = MockSessionClient(responses: [.success(session)])
-    let store = SessionStore(client: client)
+    let store = makeStore(client: client)
 
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
@@ -238,6 +243,44 @@ final class SessionStoreTests: XCTestCase {
     }
 
     XCTAssertEqual(diffViewModel.files.map(\.path), ["Fallback.swift"])
+  }
+}
+
+@MainActor
+private final class InMemorySessionPersistence: SessionPersisting {
+  private var sessions: [StoredSession] = []
+
+  func fetchSessions() throws -> [StoredSession] {
+    sessions.sorted { $0.lastOpened > $1.lastOpened }
+  }
+
+  @discardableResult
+  func upsertSession(from viewModel: SessionViewModel, openedAt date: Date) throws -> StoredSession {
+    if let index = sessions.firstIndex(where: { $0.repositoryPath == viewModel.repositoryPath }) {
+      var updated = sessions[index]
+      updated.repositoryName = viewModel.repositoryName
+      updated.defaultBranch = viewModel.defaultBranch
+      updated.currentBranch = viewModel.currentBranch
+      updated.hasUncommittedChanges = viewModel.hasUncommittedChanges
+      updated.lastOpened = date
+      sessions[index] = updated
+      return updated
+    }
+
+    let stored = StoredSession(
+      repositoryName: viewModel.repositoryName,
+      repositoryPath: viewModel.repositoryPath,
+      defaultBranch: viewModel.defaultBranch,
+      currentBranch: viewModel.currentBranch,
+      hasUncommittedChanges: viewModel.hasUncommittedChanges,
+      lastOpened: date
+    )
+    sessions.append(stored)
+    return stored
+  }
+
+  func deleteSession(id: UUID) throws {
+    sessions.removeAll { $0.id == id }
   }
 }
 

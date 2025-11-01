@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22144" systemVersion="23G93" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="SessionEntity" representedClassName="SessionEntity" syncable="YES" codeGenerationType="manual/none">
+        <attribute name="id" optional="NO" attributeType="UUIDAttributeType" usesScalarValueType="NO"/>
+        <attribute name="repositoryName" optional="NO" attributeType="String"/>
+        <attribute name="repositoryPath" optional="NO" attributeType="String"/>
+        <attribute name="defaultBranch" optional="YES" attributeType="String"/>
+        <attribute name="currentBranch" optional="YES" attributeType="String"/>
+        <attribute name="hasUncommittedChanges" optional="NO" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="lastOpened" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="threads" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ThreadEntity" inverseName="session" inverseEntity="ThreadEntity"/>
+    </entity>
+    <entity name="ThreadEntity" representedClassName="ThreadEntity" syncable="YES" codeGenerationType="manual/none">
+        <attribute name="id" optional="NO" attributeType="UUIDAttributeType" usesScalarValueType="NO"/>
+        <attribute name="externalID" optional="YES" attributeType="String"/>
+        <attribute name="pluginID" optional="NO" attributeType="String"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastUpdated" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="session" optional="NO" maxCount="1" deletionRule="Nullify" destinationEntity="SessionEntity" inverseName="threads" inverseEntity="SessionEntity"/>
+        <relationship name="comments" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="CommentEntity" inverseName="thread" inverseEntity="CommentEntity"/>
+    </entity>
+    <entity name="CommentEntity" representedClassName="CommentEntity" syncable="YES" codeGenerationType="manual/none">
+        <attribute name="id" optional="NO" attributeType="UUIDAttributeType" usesScalarValueType="NO"/>
+        <attribute name="externalID" optional="YES" attributeType="String"/>
+        <attribute name="authorName" optional="YES" attributeType="String"/>
+        <attribute name="body" optional="NO" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="filePath" optional="YES" attributeType="String"/>
+        <attribute name="lineNumber" optional="YES" attributeType="Integer 32" usesScalarValueType="YES"/>
+        <attribute name="columnNumber" optional="YES" attributeType="Integer 32" usesScalarValueType="YES"/>
+        <attribute name="diffSide" optional="YES" attributeType="String"/>
+        <relationship name="thread" optional="NO" maxCount="1" deletionRule="Nullify" destinationEntity="ThreadEntity" inverseName="comments" inverseEntity="ThreadEntity"/>
+    </entity>
+    <elements>
+        <element name="SessionEntity" positionX="-63" positionY="-18" width="128" height="179"/>
+        <element name="ThreadEntity" positionX="-167" positionY="153" width="128" height="179"/>
+        <element name="CommentEntity" positionX="78" positionY="153" width="128" height="204"/>
+    </elements>
+</model>
