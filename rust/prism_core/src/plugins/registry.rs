@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::{AgentPlugin, AmpPluginStub, GitOnlyPlugin, PluginCapabilities, PluginSummary};
+use super::{AgentPlugin, AmpPlugin, GitOnlyPlugin, PluginCapabilities, PluginSummary};
 
 static TEST_PLUGIN_STORE: OnceLock<Mutex<Vec<Arc<dyn AgentPlugin>>>> = OnceLock::new();
 
@@ -30,7 +30,7 @@ impl PluginRegistry {
     pub fn with_defaults() -> Self {
         let mut registry = Self::new();
         registry.register(GitOnlyPlugin);
-        registry.register(AmpPluginStub);
+        registry.register(AmpPlugin::default());
         if let Ok(plugins) = test_plugins().lock() {
             for plugin in plugins.iter() {
                 registry.register_arc(plugin.clone());

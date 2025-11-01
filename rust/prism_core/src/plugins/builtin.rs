@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{
-    AgentPlugin, PluginCapabilities, PluginError, PluginResult, PluginSession, ReviewPayload,
-    RevisionProgress, RevisionState, SubmissionResult, ThreadRef,
+    AgentPlugin, PluginCapabilities, PluginResult, PluginSession, ReviewPayload, RevisionProgress,
+    RevisionState, SubmissionResult, ThreadRef,
 };
 
 static GIT_ONLY_SESSION_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -53,52 +53,6 @@ impl AgentPlugin for GitOnlyPlugin {
         Ok(RevisionProgress {
             state: RevisionState::Completed,
             detail: Some("Revisions are managed locally.".into()),
-        })
-    }
-}
-
-/// Placeholder Amp plugin surfaced until CLI-backed implementation lands.
-#[derive(Debug, Default)]
-pub struct AmpPluginStub;
-
-impl AgentPlugin for AmpPluginStub {
-    fn id(&self) -> &'static str {
-        "amp"
-    }
-
-    fn label(&self) -> &'static str {
-        "Sourcegraph Amp"
-    }
-
-    fn capabilities(&self) -> PluginCapabilities {
-        PluginCapabilities::new(true, false, true)
-    }
-
-    fn list_threads(&self) -> PluginResult<Vec<ThreadRef>> {
-        Err(PluginError::UnsupportedCapability {
-            operation: "list_threads",
-        })
-    }
-
-    fn attach(&self, _thread_id: Option<&str>) -> PluginResult<PluginSession> {
-        Err(PluginError::UnsupportedCapability {
-            operation: "attach",
-        })
-    }
-
-    fn post_review(
-        &self,
-        _session: &PluginSession,
-        _payload: ReviewPayload,
-    ) -> PluginResult<SubmissionResult> {
-        Err(PluginError::UnsupportedCapability {
-            operation: "post_review",
-        })
-    }
-
-    fn poll_revision(&self, _session: &PluginSession) -> PluginResult<RevisionProgress> {
-        Err(PluginError::UnsupportedCapability {
-            operation: "poll_revision",
         })
     }
 }

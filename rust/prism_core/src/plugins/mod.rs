@@ -1,11 +1,13 @@
 //! Agent plugin system entry points.
 
+mod amp;
 mod builtin;
 mod registry;
 mod service;
 mod types;
 
-pub use builtin::{AmpPluginStub, GitOnlyPlugin};
+pub use amp::AmpPlugin;
+pub use builtin::GitOnlyPlugin;
 pub use registry::{register_test_plugin, PluginRegistry, TestPluginRegistration};
 pub use service::PluginService;
 pub use types::*;
