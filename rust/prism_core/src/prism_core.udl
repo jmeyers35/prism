@@ -226,6 +226,8 @@ interface CoreSession {
   [Throws=CoreError]
   Diff diff_head();
   [Throws=CoreError]
+  Diff diff_workspace();
+  [Throws=CoreError]
   Diff diff_for_range(RevisionRange range);
   sequence<PluginSummary> plugins();
   [Throws=CoreError]

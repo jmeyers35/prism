@@ -38,6 +38,25 @@ impl DiffEngine {
         self.diff_for_range(repository, range)
     }
 
+    /// Generate a unified diff representing the workspace changes (index and
+    /// working tree) against the current head revision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the repository has no head revision or if any
+    /// underlying git operation fails.
+    pub fn diff_workspace(&self, repository: &Repository) -> Result<Diff> {
+        let range = repository
+            .revision_range()?
+            .ok_or(Error::MissingHeadRevision)?;
+
+        let git_repo = repository.git_repo();
+        let head_tree = commit_tree(git_repo, &range.head.oid)?;
+        let files = generate_workspace_diff(git_repo, &head_tree)?;
+
+        Ok(Diff { range, files })
+    }
+
     /// Generate a unified diff for an explicit revision range.
     ///
     /// # Errors
@@ -104,6 +123,23 @@ fn generate_diff(
     base_tree: Option<&git2::Tree<'_>>,
     head_tree: &git2::Tree<'_>,
 ) -> Result<Vec<DiffFile>> {
+    let mut options = tree_diff_options();
+    let mut raw_diff = repo.diff_tree_to_tree(base_tree, Some(head_tree), Some(&mut options))?;
+    configure_similarity(&mut raw_diff)?;
+    build_files(&raw_diff)
+}
+
+fn generate_workspace_diff(
+    repo: &git2::Repository,
+    head_tree: &git2::Tree<'_>,
+) -> Result<Vec<DiffFile>> {
+    let mut options = workspace_diff_options();
+    let mut raw_diff = repo.diff_tree_to_workdir_with_index(Some(head_tree), Some(&mut options))?;
+    configure_similarity(&mut raw_diff)?;
+    build_files(&raw_diff)
+}
+
+fn tree_diff_options() -> DiffOptions {
     let mut options = DiffOptions::new();
     options
         .context_lines(3)
@@ -112,9 +148,21 @@ fn generate_diff(
         .indent_heuristic(true)
         .include_unmodified(true)
         .include_typechange(true);
+    options
+}
 
-    let mut raw_diff = repo.diff_tree_to_tree(base_tree, Some(head_tree), Some(&mut options))?;
+fn workspace_diff_options() -> DiffOptions {
+    let mut options = tree_diff_options();
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false)
+        .include_unmodified(false)
+        .include_typechange(true);
+    options
+}
 
+fn configure_similarity(diff: &mut git2::Diff<'_>) -> Result<()> {
     let mut find_options = DiffFindOptions::new();
     find_options
         .renames(true)
@@ -125,9 +173,8 @@ fn generate_diff(
         .break_rewrites_for_renames_only(true)
         .remove_unmodified(true);
 
-    raw_diff.find_similar(Some(&mut find_options))?;
-
-    build_files(&raw_diff)
+    diff.find_similar(Some(&mut find_options))?;
+    Ok(())
 }
 
 #[derive(Default)]
@@ -437,6 +484,82 @@ mod tests {
     }
 
     #[test]
+    fn diff_workspace_surfaces_staged_and_unstaged_changes() -> Result<()> {
+        let temp = TempDir::new().expect("tempdir");
+        let git_repo = GitRepository::init(temp.path())?;
+
+        write_file(temp.path().join("tracked.txt"), "one\n");
+        stage_and_commit(&git_repo, "Initial commit")?;
+
+        write_file(temp.path().join("tracked.txt"), "one\ntwo\n");
+        stage_file(&git_repo, "tracked.txt")?;
+        write_file(temp.path().join("tracked.txt"), "one\ntwo\nthree\n");
+
+        write_file(temp.path().join("notes.md"), "draft\n");
+
+        let repository = Repository::open(temp.path())?;
+        let diff = DiffEngine::new().diff_workspace(&repository)?;
+
+        let paths: Vec<_> = diff.files.iter().map(|file| file.path.as_str()).collect();
+        assert!(paths.contains(&"tracked.txt"));
+        assert!(paths.contains(&"notes.md"));
+
+        let tracked = diff
+            .files
+            .iter()
+            .find(|file| file.path == "tracked.txt")
+            .expect("tracked file present");
+        assert_eq!(tracked.status, FileStatus::Modified);
+        assert!(tracked.stats.additions > 0);
+
+        let notes = diff
+            .files
+            .iter()
+            .find(|file| file.path == "notes.md")
+            .expect("notes file present");
+        assert_eq!(notes.status, FileStatus::Added);
+
+        Ok(())
+    }
+
+    #[test]
+    fn diff_workspace_returns_empty_for_clean_worktree() -> Result<()> {
+        let temp = TempDir::new().expect("tempdir");
+        let git_repo = GitRepository::init(temp.path())?;
+
+        write_file(temp.path().join("README.md"), "hello\n");
+        stage_and_commit(&git_repo, "Initial commit")?;
+
+        let repository = Repository::open(temp.path())?;
+        let diff = DiffEngine::new().diff_workspace(&repository)?;
+
+        assert!(diff.files.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn diff_workspace_marks_binary_file() -> Result<()> {
+        let temp = TempDir::new().expect("tempdir");
+        let git_repo = GitRepository::init(temp.path())?;
+
+        write_bytes(temp.path().join("asset.bin"), &[0_u8, 159, 255, 0]);
+        stage_and_commit(&git_repo, "Initial commit")?;
+
+        write_bytes(temp.path().join("asset.bin"), &[5_u8, 6, 7, 8]);
+
+        let repository = Repository::open(temp.path())?;
+        let diff = DiffEngine::new().diff_workspace(&repository)?;
+
+        assert_eq!(diff.files.len(), 1);
+        let file = &diff.files[0];
+        assert!(file.is_binary);
+        assert!(file.hunks.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
     fn errors_when_repository_has_no_head() {
         let temp = TempDir::new().expect("tempdir");
         let git_repo = GitRepository::init(temp.path()).expect("init repo");
@@ -476,6 +599,13 @@ mod tests {
 
     fn write_bytes(path: std::path::PathBuf, contents: &[u8]) {
         std::fs::write(path, contents).expect("write bytes");
+    }
+
+    fn stage_file(repo: &GitRepository, path: &str) -> Result<()> {
+        let mut index = repo.index()?;
+        index.add_path(std::path::Path::new(path))?;
+        index.write()?;
+        Ok(())
     }
 
     fn stage_and_commit(repo: &GitRepository, message: &str) -> Result<()> {

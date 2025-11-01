@@ -261,6 +261,11 @@ void*_Nonnull uniffi_prism_core_fn_clone_coresession(void*_Nonnull ptr, RustCall
 void uniffi_prism_core_fn_free_coresession(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_ATTACH_PLUGIN
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_ATTACH_PLUGIN
+RustBuffer uniffi_prism_core_fn_method_coresession_attach_plugin(void*_Nonnull ptr, RustBuffer plugin_id, RustBuffer thread_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_BASE_REVISION
 #define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_BASE_REVISION
 RustBuffer uniffi_prism_core_fn_method_coresession_base_revision(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -276,9 +281,34 @@ RustBuffer uniffi_prism_core_fn_method_coresession_diff_for_range(void*_Nonnull 
 RustBuffer uniffi_prism_core_fn_method_coresession_diff_head(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_DIFF_WORKSPACE
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_DIFF_WORKSPACE
+RustBuffer uniffi_prism_core_fn_method_coresession_diff_workspace(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_HEAD_REVISION
 #define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_HEAD_REVISION
 RustBuffer uniffi_prism_core_fn_method_coresession_head_revision(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_PLUGIN_THREADS
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_PLUGIN_THREADS
+RustBuffer uniffi_prism_core_fn_method_coresession_plugin_threads(void*_Nonnull ptr, RustBuffer plugin_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_PLUGINS
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_PLUGINS
+RustBuffer uniffi_prism_core_fn_method_coresession_plugins(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_POLL_REVISION
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_POLL_REVISION
+RustBuffer uniffi_prism_core_fn_method_coresession_poll_revision(void*_Nonnull ptr, RustBuffer session, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_POST_REVIEW
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_POST_REVIEW
+RustBuffer uniffi_prism_core_fn_method_coresession_post_review(void*_Nonnull ptr, RustBuffer session, RustBuffer payload, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_FN_METHOD_CORESESSION_REFRESH
@@ -592,6 +622,12 @@ uint16_t uniffi_prism_core_checksum_func_open(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_ATTACH_PLUGIN
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_ATTACH_PLUGIN
+uint16_t uniffi_prism_core_checksum_method_coresession_attach_plugin(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_BASE_REVISION
 #define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_BASE_REVISION
 uint16_t uniffi_prism_core_checksum_method_coresession_base_revision(void
@@ -610,9 +646,39 @@ uint16_t uniffi_prism_core_checksum_method_coresession_diff_head(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_DIFF_WORKSPACE
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_DIFF_WORKSPACE
+uint16_t uniffi_prism_core_checksum_method_coresession_diff_workspace(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_HEAD_REVISION
 #define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_HEAD_REVISION
 uint16_t uniffi_prism_core_checksum_method_coresession_head_revision(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_PLUGIN_THREADS
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_PLUGIN_THREADS
+uint16_t uniffi_prism_core_checksum_method_coresession_plugin_threads(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_PLUGINS
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_PLUGINS
+uint16_t uniffi_prism_core_checksum_method_coresession_plugins(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_POLL_REVISION
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_POLL_REVISION
+uint16_t uniffi_prism_core_checksum_method_coresession_poll_revision(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_POST_REVIEW
+#define UNIFFI_FFIDEF_UNIFFI_PRISM_CORE_CHECKSUM_METHOD_CORESESSION_POST_REVIEW
+uint16_t uniffi_prism_core_checksum_method_coresession_post_review(void
     
 );
 #endif

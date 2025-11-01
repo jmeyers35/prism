@@ -8,6 +8,8 @@ public enum PrismCoreError: Error, Equatable {
     case io(message: String)
     case unimplemented(message: String)
     case internalError(message: String)
+    case pluginNotRegistered(message: String)
+    case plugin(message: String)
 
     init(coreError: CoreError) {
         switch coreError {
@@ -25,6 +27,10 @@ public enum PrismCoreError: Error, Equatable {
             self = .unimplemented(message: message)
         case let .Internal(message):
             self = .internalError(message: message)
+        case let .PluginNotRegistered(message):
+            self = .pluginNotRegistered(message: message)
+        case let .Plugin(message):
+            self = .plugin(message: message)
         }
     }
 }
@@ -99,6 +105,10 @@ public final class PrismCoreSession {
 
     public func diffHead() async throws -> Diff {
         try await call { try self.coreSession.diffHead() }
+    }
+
+    public func diffWorkspace() async throws -> Diff {
+        try await call { try self.coreSession.diffWorkspace() }
     }
 
     public func diffForRange(_ range: RevisionRange) async throws -> Diff {

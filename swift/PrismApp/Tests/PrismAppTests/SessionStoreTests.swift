@@ -60,7 +60,9 @@ final class SessionStoreTests: XCTestCase {
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
     session.status = WorkspaceStatus(currentBranch: "feature/updated", dirty: false)
-    session.diff = MockSession.makeDiff(files: [MockSession.makeFile(path: "README.md", additions: UInt32(3), deletions: UInt32(1))])
+    let updatedDiff = MockSession.makeDiff(files: [MockSession.makeFile(path: "README.md", additions: UInt32(3), deletions: UInt32(1))])
+    session.workspaceDiff = updatedDiff
+    session.headDiff = updatedDiff
 
     await store.refreshActiveSession()
 
@@ -189,10 +191,11 @@ final class SessionStoreTests: XCTestCase {
       status: WorkspaceStatus(currentBranch: "feature/prism", dirty: false)
     )
 
-    session.diffResponses = [
+    session.workspaceDiffResponses = [
       .success(MockSession.makeDiff(files: [MockSession.makeFile(path: "File.swift", additions: UInt32(2), deletions: UInt32(1))])),
       .failure(MockError.transient)
     ]
+    session.headDiffResponses = [.failure(MockError.transient)]
 
     let client = MockSessionClient(responses: [.success(session)])
     let store = SessionStore(client: client)
@@ -212,6 +215,29 @@ final class SessionStoreTests: XCTestCase {
     }
 
     XCTAssertFalse(message.isEmpty)
+  }
+
+  func testLoadDiffFallsBackToHeadOnWorkspaceFailure() async throws {
+    let session = MockSession(
+      info: RepositoryInfo(root: "/tmp/prism", defaultBranch: "main"),
+      status: WorkspaceStatus(currentBranch: "feature/prism", dirty: false)
+    )
+
+    session.workspaceDiffResponses = [.failure(MockError.transient)]
+    session.headDiffResponses = [
+      .success(MockSession.makeDiff(files: [MockSession.makeFile(path: "Fallback.swift", additions: UInt32(1), deletions: UInt32(0))]))
+    ]
+
+    let client = MockSessionClient(responses: [.success(session)])
+    let store = SessionStore(client: client)
+
+    await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
+
+    guard case let .loaded(diffViewModel) = store.diffPhase else {
+      return XCTFail("Expected loaded diff state using fallback")
+    }
+
+    XCTAssertEqual(diffViewModel.files.map(\.path), ["Fallback.swift"])
   }
 }
 
@@ -247,15 +273,18 @@ private final class MockSessionClient: PrismSessionClient {
 private final class MockSession: PrismSession {
   var info: RepositoryInfo
   var status: WorkspaceStatus
-  var diff: Diff
+  var workspaceDiff: Diff
+  var headDiff: Diff
   var repositoryInfoHandler: (() async throws -> RepositoryInfo)?
   var workspaceStatusHandler: (() async throws -> WorkspaceStatus)?
-  var diffResponses: [Result<Diff, Error>] = []
+  var workspaceDiffResponses: [Result<Diff, Error>] = []
+  var headDiffResponses: [Result<Diff, Error>] = []
 
   init(info: RepositoryInfo, status: WorkspaceStatus, diff: Diff = MockSession.makeDiff()) {
     self.info = info
     self.status = status
-    self.diff = diff
+    self.workspaceDiff = diff
+    self.headDiff = diff
   }
 
   func repositoryInfo() async throws -> RepositoryInfo {
@@ -272,18 +301,32 @@ private final class MockSession: PrismSession {
     return status
   }
 
-  func diffHead() async throws -> Diff {
-    if !diffResponses.isEmpty {
-      let response = diffResponses.removeFirst()
+  func diffWorkspace() async throws -> Diff {
+    if !workspaceDiffResponses.isEmpty {
+      let response = workspaceDiffResponses.removeFirst()
       switch response {
       case let .success(diff):
-        self.diff = diff
+        self.workspaceDiff = diff
         return diff
       case let .failure(error):
         throw error
       }
     }
-    return diff
+    return workspaceDiff
+  }
+
+  func diffHead() async throws -> Diff {
+    if !headDiffResponses.isEmpty {
+      let response = headDiffResponses.removeFirst()
+      switch response {
+      case let .success(diff):
+        self.headDiff = diff
+        return diff
+      case let .failure(error):
+        throw error
+      }
+    }
+    return headDiff
   }
 
   static func makeDiff(files: [DiffFile] = []) -> Diff {

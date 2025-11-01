@@ -97,6 +97,18 @@ impl CoreSession {
         self.diff_engine.diff(&repository).map_err(CoreError::from)
     }
 
+    /// Generate a diff representing staged and unstaged workspace changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when diff computation fails or repository access is unavailable.
+    pub fn diff_workspace(&self) -> Result<Diff> {
+        let repository = self.repository.lock().map_err(CoreError::from)?;
+        self.diff_engine
+            .diff_workspace(&repository)
+            .map_err(CoreError::from)
+    }
+
     /// Generate a diff for an explicit revision range.
     ///
     /// # Errors

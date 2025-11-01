@@ -129,7 +129,17 @@ final class SessionStore: ObservableObject {
     diffPhase = .loading
 
     do {
-      let diff = try await session.diffHead()
+      let diff: Diff
+      do {
+        diff = try await session.diffWorkspace()
+      } catch {
+        let workspaceError = error
+        do {
+          diff = try await session.diffHead()
+        } catch {
+          throw workspaceError
+        }
+      }
       guard diffLoadIdentifier == ticket else { return }
       guard let currentSession = activeSession else { return }
       guard ObjectIdentifier(currentSession as AnyObject) == sessionID else { return }
@@ -165,7 +175,9 @@ final class SessionStore: ObservableObject {
         let .git(message),
         let .io(message),
         let .unimplemented(message),
-        let .internalError(message):
+        let .internalError(message),
+        let .pluginNotRegistered(message),
+        let .plugin(message):
         return message
       }
     }
@@ -205,6 +217,7 @@ protocol PrismSessionClient {
 protocol PrismSession: AnyObject {
   func repositoryInfo() async throws -> RepositoryInfo
   func workspaceStatus() async throws -> WorkspaceStatus
+  func diffWorkspace() async throws -> Diff
   func diffHead() async throws -> Diff
 }
 

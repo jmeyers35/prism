@@ -80,7 +80,7 @@ final class PrismCoreClientTests: XCTestCase {
         status = try await session.workspaceStatus()
         XCTAssertTrue(status.dirty)
 
-        let dirtyDiff = try await session.diffHead()
+        let dirtyDiff = try await session.diffWorkspace()
         XCTAssertEqual(dirtyDiff.files.count, 1)
         let dirtyFile = try XCTUnwrap(dirtyDiff.files.first)
         XCTAssertEqual(dirtyFile.path, "README.md")
