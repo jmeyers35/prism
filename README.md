@@ -87,6 +87,18 @@ Prism sends this JSON in the review message (inline or as JSONL content). Anchor
   - Open the Xcode project (to be added) and run on macOS.
   - Dependencies via Swift Package Manager: SwiftGit2 (+ bundled libgit2).
 
+### Rust workspace
+- The `rust/` directory is a Cargo workspace containing:
+  - `prism_core`: core library, FFI surface, repository + diff logic
+  - `prism_api`: shared diff/review data models used by the workspace and Swift bindings
+  - `prism_plugin_api`: plugin traits/registry helpers for integrators
+  - `prism_plugins`: first-party plugin implementations (Amp, Git-only) and default registry wiring
+- Common tasks are exposed via `mise` for consistency:
+  - `mise run build-rust` builds every crate in release mode
+  - `mise run fmt-rust` formats all Rust sources
+  - `mise run lint-rust` executes Clippy across the workspace with warnings as errors
+  - `mise run test-rust` runs unit/integration tests for each crate
+
 ### Rust FFI bindings
 - `mise swift-bindings` regenerates the UniFFI Swift glue code under `swift/PrismFFI/Sources/PrismFFI/`.
 - `mise build-xcframework` builds an arm64-only `PrismCoreFFI.xcframework` in `swift/PrismFFI/` for consumption via Swift Package Manager. Run `rustup target add aarch64-apple-darwin` once before invoking if the target is missing. (Intel support will be added later if needed.)
