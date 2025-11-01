@@ -34,6 +34,9 @@ pub enum CoreError {
     /// Plugin failed to handle the request.
     #[error("plugin error")]
     Plugin,
+    /// Suggestion translation or application failed.
+    #[error("suggestion error")]
+    Suggestion,
 }
 
 impl From<Error> for CoreError {
@@ -47,6 +50,7 @@ impl From<Error> for CoreError {
             Error::MissingHeadRevision => Self::MissingHeadRevision,
             Error::PluginNotRegistered { .. } => Self::PluginNotRegistered,
             Error::Plugin { .. } => Self::Plugin,
+            Error::Suggestion { .. } => Self::Suggestion,
         }
     }
 }

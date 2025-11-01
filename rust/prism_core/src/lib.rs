@@ -37,6 +37,8 @@ pub mod ffi;
 pub mod plugins;
 /// Git repository access and snapshot helpers.
 pub mod repository;
+/// Suggestion dry-run and apply helpers.
+pub mod suggestion;
 
 pub use api::{
     CommentDraft, Diagnostic, Diff, DiffFile, DiffHunk, DiffLine, DiffLineKind, DiffRange,
@@ -49,6 +51,7 @@ pub use plugins::{
     RevisionProgress, RevisionState, SubmissionResult, ThreadRef,
 };
 pub use repository::RepositorySnapshot;
+pub use suggestion::{ApplyPreview, SuggestionApplier, SuggestionError};
 
 /// Common result type for the crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -107,5 +110,12 @@ pub enum Error {
         /// Wrapped plugin error.
         #[source]
         source: plugins::PluginError,
+    },
+    /// Suggestion dry-run or apply failed.
+    #[error("suggestion error: {source}")]
+    Suggestion {
+        /// Underlying suggestion error.
+        #[from]
+        source: suggestion::SuggestionError,
     },
 }
