@@ -6,10 +6,13 @@ import PrismFFI
 @MainActor
 final class SessionStore: ObservableObject {
   @Published private(set) var phase: SessionPhase = .idle
+  @Published private(set) var diffPhase: DiffPhase = .idle
+  @Published var selectedDiffFileID: DiffFileViewModel.ID?
 
   private let client: any PrismSessionClient
   private var activeSession: (any PrismSession)?
   private var loadIdentifier: UUID?
+  private var diffLoadIdentifier: UUID?
 
   init(client: any PrismSessionClient = PrismCoreClientAdapter()) {
     self.client = client
@@ -34,9 +37,14 @@ final class SessionStore: ObservableObject {
   func openSession(at url: URL) async {
     let previousSession = activeSession
     let previousPhase = phase
+    let previousDiffPhase = diffPhase
+    let previousSelection = selectedDiffFileID
     let ticket = UUID()
     loadIdentifier = ticket
+    diffLoadIdentifier = nil
     phase = .loading(url)
+    diffPhase = .idle
+    selectedDiffFileID = nil
 
     do {
       let session = try await client.openSession(at: url.path)
@@ -47,6 +55,9 @@ final class SessionStore: ObservableObject {
 
       activeSession = session
       phase = .ready(makeViewModel(info: info, status: status))
+      let sessionID = ObjectIdentifier(session as AnyObject)
+      await loadDiff(for: session, sessionID: sessionID, preferredSelection: nil)
+      guard loadIdentifier == ticket else { return }
       loadIdentifier = nil
     } catch {
       guard loadIdentifier == ticket else { return }
@@ -55,9 +66,13 @@ final class SessionStore: ObservableObject {
       if let previousSession {
         activeSession = previousSession
         phase = previousPhase
+        diffPhase = previousDiffPhase
+        selectedDiffFileID = previousSelection
       } else {
         activeSession = nil
         phase = .failed(Self.describe(error))
+        diffPhase = .idle
+        selectedDiffFileID = nil
       }
     }
   }
@@ -66,6 +81,9 @@ final class SessionStore: ObservableObject {
     loadIdentifier = nil
     activeSession = nil
     phase = .idle
+    diffPhase = .idle
+    selectedDiffFileID = nil
+    diffLoadIdentifier = nil
   }
 
   func refreshActiveSession() async {
@@ -81,6 +99,7 @@ final class SessionStore: ObservableObject {
       guard ObjectIdentifier(currentSession as AnyObject) == expectedSessionID else { return }
 
       phase = .ready(makeViewModel(info: info, status: status))
+      await loadDiff(for: session, sessionID: expectedSessionID, preferredSelection: selectedDiffFileID)
     } catch {
       guard loadIdentifier == expectedLoadIdentifier else { return }
       guard let activeSession = activeSession else { return }
@@ -90,8 +109,51 @@ final class SessionStore: ObservableObject {
     }
   }
 
+  func reloadDiff() async {
+    guard let session = activeSession else { return }
+    let sessionID = ObjectIdentifier(session as AnyObject)
+    await loadDiff(for: session, sessionID: sessionID, preferredSelection: selectedDiffFileID)
+  }
+
   func hasActiveSession() -> Bool {
     activeSession != nil
+  }
+
+  private func loadDiff(
+    for session: any PrismSession,
+    sessionID: ObjectIdentifier,
+    preferredSelection: DiffFileViewModel.ID?
+  ) async {
+    let ticket = UUID()
+    diffLoadIdentifier = ticket
+    diffPhase = .loading
+
+    do {
+      let diff = try await session.diffHead()
+      guard diffLoadIdentifier == ticket else { return }
+      guard let currentSession = activeSession else { return }
+      guard ObjectIdentifier(currentSession as AnyObject) == sessionID else { return }
+
+      let viewModel = DiffBrowserViewModel(diff: diff)
+      diffPhase = .loaded(viewModel)
+
+      if let preferredSelection,
+         viewModel.files.contains(where: { $0.id == preferredSelection }) {
+        selectedDiffFileID = preferredSelection
+      } else {
+        selectedDiffFileID = viewModel.files.first?.id
+      }
+
+      diffLoadIdentifier = nil
+    } catch {
+      guard diffLoadIdentifier == ticket else { return }
+      guard let currentSession = activeSession else { return }
+      guard ObjectIdentifier(currentSession as AnyObject) == sessionID else { return }
+
+      diffPhase = .failed(Self.describe(error))
+      selectedDiffFileID = nil
+      diffLoadIdentifier = nil
+    }
   }
 
   private static func describe(_ error: Error) -> String {
@@ -143,6 +205,7 @@ protocol PrismSessionClient {
 protocol PrismSession: AnyObject {
   func repositoryInfo() async throws -> RepositoryInfo
   func workspaceStatus() async throws -> WorkspaceStatus
+  func diffHead() async throws -> Diff
 }
 
 struct PrismCoreClientAdapter: PrismSessionClient {

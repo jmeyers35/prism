@@ -65,10 +65,7 @@ private struct DetailView: View {
     case .overview:
       OverviewDetail(viewModel: viewModel)
     case .files:
-      PlaceholderDetail(
-        title: "Files",
-        message: "Diff files will appear here once the review experience is wired."
-      )
+      FilesDetail()
     case .activity:
       PlaceholderDetail(
         title: "Activity",
@@ -126,5 +123,51 @@ private struct PlaceholderDetail: View {
         .frame(maxWidth: 320)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+private struct FilesDetail: View {
+  @EnvironmentObject private var sessionStore: SessionStore
+
+  var body: some View {
+    switch sessionStore.diffPhase {
+    case .idle:
+      VStack(spacing: 12) {
+        Text("Open a repository to view diffs")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    case .loading:
+      ProgressView("Loading diff…")
+        .progressViewStyle(.circular)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    case .failed(let message):
+      VStack(spacing: 12) {
+        Text("We couldn't load the diff")
+          .font(.headline)
+
+        Text(message)
+          .font(.body)
+          .multilineTextAlignment(.center)
+          .foregroundStyle(.secondary)
+
+        Button("Retry") {
+          Task { await sessionStore.reloadDiff() }
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    case .loaded(let diffViewModel):
+      DiffBrowserView(
+        viewModel: diffViewModel,
+        selection: Binding(
+          get: { sessionStore.selectedDiffFileID },
+          set: { sessionStore.selectedDiffFileID = $0 }
+        ),
+        reload: {
+          Task { await sessionStore.reloadDiff() }
+        }
+      )
+    }
   }
 }

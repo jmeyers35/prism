@@ -24,6 +24,13 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(viewModel.currentBranch, "feature/prism")
     XCTAssertTrue(viewModel.hasUncommittedChanges)
     XCTAssertTrue(store.hasActiveSession())
+
+    guard case let .loaded(diffViewModel) = store.diffPhase else {
+      return XCTFail("Expected loaded diff state after refresh")
+    }
+
+    XCTAssertTrue(diffViewModel.files.isEmpty)
+    XCTAssertNil(store.selectedDiffFileID)
   }
 
   func testOpenSessionFailure() async {
@@ -38,6 +45,7 @@ final class SessionStoreTests: XCTestCase {
 
     XCTAssertFalse(message.isEmpty)
     XCTAssertFalse(store.hasActiveSession())
+    XCTAssertEqual(store.diffPhase, .idle)
   }
 
   func testRefreshActiveSessionUpdatesState() async throws {
@@ -52,6 +60,7 @@ final class SessionStoreTests: XCTestCase {
     await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
 
     session.status = WorkspaceStatus(currentBranch: "feature/updated", dirty: false)
+    session.diff = MockSession.makeDiff(files: [MockSession.makeFile(path: "README.md", additions: UInt32(3), deletions: UInt32(1))])
 
     await store.refreshActiveSession()
 
@@ -61,6 +70,13 @@ final class SessionStoreTests: XCTestCase {
 
     XCTAssertEqual(viewModel.currentBranch, "feature/updated")
     XCTAssertFalse(viewModel.hasUncommittedChanges)
+
+    guard case let .loaded(diffViewModel) = store.diffPhase else {
+      return XCTFail("Expected loaded diff state after refresh")
+    }
+
+    let paths = diffViewModel.files.map(\.path)
+    XCTAssertEqual(paths, ["README.md"])
   }
 
   func testRefreshActiveSessionKeepsStateOnError() async throws {
@@ -166,6 +182,37 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(currentViewModel, originalViewModel)
     XCTAssertTrue(store.hasActiveSession())
   }
+
+  func testReloadDiffHandlesErrors() async throws {
+    let session = MockSession(
+      info: RepositoryInfo(root: "/tmp/prism", defaultBranch: "main"),
+      status: WorkspaceStatus(currentBranch: "feature/prism", dirty: false)
+    )
+
+    session.diffResponses = [
+      .success(MockSession.makeDiff(files: [MockSession.makeFile(path: "File.swift", additions: UInt32(2), deletions: UInt32(1))])),
+      .failure(MockError.transient)
+    ]
+
+    let client = MockSessionClient(responses: [.success(session)])
+    let store = SessionStore(client: client)
+
+    await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
+
+    guard case let .loaded(initialDiff) = store.diffPhase else {
+      return XCTFail("Expected loaded diff state")
+    }
+
+    XCTAssertEqual(initialDiff.files.first?.path, "File.swift")
+
+    await store.reloadDiff()
+
+    guard case let .failed(message) = store.diffPhase else {
+      return XCTFail("Expected failed diff state")
+    }
+
+    XCTAssertFalse(message.isEmpty)
+  }
 }
 
 private enum MockError: Error {
@@ -200,12 +247,15 @@ private final class MockSessionClient: PrismSessionClient {
 private final class MockSession: PrismSession {
   var info: RepositoryInfo
   var status: WorkspaceStatus
+  var diff: Diff
   var repositoryInfoHandler: (() async throws -> RepositoryInfo)?
   var workspaceStatusHandler: (() async throws -> WorkspaceStatus)?
+  var diffResponses: [Result<Diff, Error>] = []
 
-  init(info: RepositoryInfo, status: WorkspaceStatus) {
+  init(info: RepositoryInfo, status: WorkspaceStatus, diff: Diff = MockSession.makeDiff()) {
     self.info = info
     self.status = status
+    self.diff = diff
   }
 
   func repositoryInfo() async throws -> RepositoryInfo {
@@ -220,5 +270,40 @@ private final class MockSession: PrismSession {
       return try await handler()
     }
     return status
+  }
+
+  func diffHead() async throws -> Diff {
+    if !diffResponses.isEmpty {
+      let response = diffResponses.removeFirst()
+      switch response {
+      case let .success(diff):
+        self.diff = diff
+        return diff
+      case let .failure(error):
+        throw error
+      }
+    }
+    return diff
+  }
+
+  static func makeDiff(files: [DiffFile] = []) -> Diff {
+    Diff(
+      range: RevisionRange(
+        base: Revision(oid: "BASE", reference: nil, summary: nil, author: nil, committer: nil, timestamp: nil),
+        head: Revision(oid: "HEAD", reference: nil, summary: nil, author: nil, committer: nil, timestamp: nil)
+      ),
+      files: files
+    )
+  }
+
+  static func makeFile(path: String, additions: UInt32, deletions: UInt32) -> DiffFile {
+    DiffFile(
+      path: path,
+      oldPath: nil,
+      status: .modified,
+      stats: DiffStats(additions: additions, deletions: deletions),
+      isBinary: false,
+      hunks: []
+    )
   }
 }
