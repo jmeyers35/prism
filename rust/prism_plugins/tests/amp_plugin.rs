@@ -5,7 +5,8 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use prism_core::plugins::{AgentPlugin, AmpPlugin, ReviewPayload, RevisionState};
+use prism_plugin_api::{AgentPlugin, ReviewPayload, RevisionState};
+use prism_plugins::AmpPlugin;
 use tempfile::TempDir;
 
 static TEST_GUARD: Mutex<()> = Mutex::new(());

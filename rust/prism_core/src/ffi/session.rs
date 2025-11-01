@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     diff::DiffEngine,
     plugins::{
-        PluginRegistry, PluginService, PluginSession, PluginSummary, ReviewPayload,
+        default_registry, PluginService, PluginSession, PluginSummary, ReviewPayload,
         RevisionProgress, SubmissionResult, ThreadRef,
     },
     repository::{Repository, RepositorySnapshot},
@@ -25,8 +25,7 @@ pub struct CoreSession {
 impl CoreSession {
     /// Construct a session for the provided repository path.
     fn new(repository: Repository) -> Self {
-        let registry = PluginRegistry::with_defaults();
-        let plugin_service = PluginService::new(registry);
+        let plugin_service = PluginService::new(default_registry());
         Self {
             repository: Arc::new(Mutex::new(repository)),
             diff_engine: DiffEngine::new(),

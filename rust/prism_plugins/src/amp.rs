@@ -8,12 +8,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use wait_timeout::ChildExt;
-
-use super::{
+use prism_api::{CommentDraft, Diagnostic, FileRange};
+use prism_plugin_api::{
     AgentPlugin, PluginCapabilities, PluginError, PluginResult, PluginSession, ReviewPayload,
     RevisionProgress, RevisionState, SubmissionResult, ThreadRef,
 };
+use wait_timeout::ChildExt;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
 const SESSION_PREFIX: &str = "amp-session";
@@ -489,38 +489,47 @@ fn render_payload(payload: &ReviewPayload) -> String {
     sections.join("\n\n")
 }
 
-fn format_comment(comment: &crate::api::CommentDraft) -> String {
+fn format_comment(comment: &CommentDraft) -> String {
+    let (start, end) = format_line_range(&comment.location);
     format!(
         "- {path} [{side:?}] lines {start}-{end}: {body}",
         path = comment.location.path,
         side = comment.location.side,
-        start = comment.location.range.start.line,
-        end = comment.location.range.end.line,
+        start = start,
+        end = end,
         body = comment.body.trim()
     )
 }
 
-fn format_diagnostic(diag: &crate::api::Diagnostic) -> String {
+fn format_diagnostic(diag: &Diagnostic) -> String {
     let detail = diag
         .detail
         .as_ref()
         .map(|d| format!(" -- {}", d.trim()))
         .unwrap_or_default();
+    let (start, end) = format_line_range(&diag.location);
     format!(
         "- {title} [{severity:?}] at {path} [{side:?}] lines {start}-{end}{detail}",
         title = diag.title,
         severity = diag.severity,
         path = diag.location.path,
         side = diag.location.side,
-        start = diag.location.range.start.line,
-        end = diag.location.range.end.line,
+        start = start,
+        end = end,
     )
+}
+
+fn format_line_range(range: &FileRange) -> (u32, u32) {
+    let start = range.range.start.line;
+    let raw_end = range.range.end.line;
+    let end = raw_end.saturating_sub(1).max(start);
+    (start, end)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{CommentDraft, Diagnostic, DiffSide, FileRange, Position, Range, Severity};
+    use prism_api::{DiffSide, FileRange, Position, Range, Severity};
 
     #[test]
     fn render_payload_formats_all_sections() {
@@ -553,7 +562,7 @@ mod tests {
 
         let rendered = render_payload(&payload);
 
-        let expected = "Summary:\nSummary text\n\nRequested Actions:\n- Action one\n- Action two\n\nInline Comments:\n- src/lib.rs [Head] lines 10-12: Comment body\n\nDiagnostics:\n- Diag title [Warning] at src/lib.rs [Base] lines 3-4 -- Detail info";
+        let expected = "Summary:\nSummary text\n\nRequested Actions:\n- Action one\n- Action two\n\nInline Comments:\n- src/lib.rs [Head] lines 10-11: Comment body\n\nDiagnostics:\n- Diag title [Warning] at src/lib.rs [Base] lines 3-3 -- Detail info";
         assert_eq!(rendered, expected);
     }
 

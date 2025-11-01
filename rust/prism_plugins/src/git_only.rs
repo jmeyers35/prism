@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{
+use prism_plugin_api::{
     AgentPlugin, PluginCapabilities, PluginResult, PluginSession, ReviewPayload, RevisionProgress,
     RevisionState, SubmissionResult, ThreadRef,
 };

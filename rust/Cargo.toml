@@ -1,0 +1,8 @@
+ [workspace]
+ members = [
+     "prism_api",
+     "prism_core",
+     "prism_plugin_api",
+     "prism_plugins",
+ ]
+ resolver = "2"

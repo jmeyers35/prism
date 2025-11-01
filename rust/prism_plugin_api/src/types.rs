@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::api::{CommentDraft, Diagnostic};
+use prism_api::{CommentDraft, Diagnostic};
 
 /// Capabilities advertised by a plugin for UI feature toggles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

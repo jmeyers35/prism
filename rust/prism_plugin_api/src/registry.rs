@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::{AgentPlugin, AmpPlugin, GitOnlyPlugin, PluginCapabilities, PluginSummary};
+use crate::{AgentPlugin, PluginCapabilities, PluginSummary};
 
 static TEST_PLUGIN_STORE: OnceLock<Mutex<Vec<Arc<dyn AgentPlugin>>>> = OnceLock::new();
 
@@ -23,20 +23,6 @@ impl PluginRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Instantiate a registry pre-populated with built-in plugins.
-    #[must_use]
-    pub fn with_defaults() -> Self {
-        let mut registry = Self::new();
-        registry.register(GitOnlyPlugin);
-        registry.register(AmpPlugin::default());
-        if let Ok(plugins) = test_plugins().lock() {
-            for plugin in plugins.iter() {
-                registry.register_arc(plugin.clone());
-            }
-        }
-        registry
     }
 
     /// Register a plugin keyed by its `AgentPlugin::id`.
@@ -128,4 +114,13 @@ where
     drop(plugins);
 
     TestPluginRegistration { id }
+}
+
+/// Collect registered test plugins for injection into a registry.
+#[must_use]
+pub fn registered_test_plugins() -> Vec<Arc<dyn AgentPlugin>> {
+    test_plugins()
+        .lock()
+        .map(|plugins| plugins.iter().cloned().collect())
+        .unwrap_or_default()
 }

@@ -1,0 +1,12 @@
+ [package]
+ name = "prism_api"
+ version = "0.1.0"
+ edition = "2021"
+ description = "Shared Prism data models for core and plugins"
+ publish = false
+
+ [dependencies]
+ serde = { version = "1.0", features = ["derive"] }
+
+ [dev-dependencies]
+ serde_json = "1.0"

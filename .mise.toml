@@ -1,21 +1,21 @@
 [tools]
 rust = "stable"
 
-[tasks.build-core]
-description = "Build the Rust core library"
-run = "cargo build --manifest-path rust/prism_core/Cargo.toml --release"
+[tasks.build-rust]
+description = "Build all Rust crates"
+run = "cargo build --manifest-path rust/Cargo.toml --workspace --release"
 
-[tasks.test-core]
-description = "Run Rust core tests"
-run = "cargo test --manifest-path rust/prism_core/Cargo.toml"
+[tasks.test-rust]
+description = "Run Rust tests across the workspace"
+run = "cargo test --manifest-path rust/Cargo.toml --workspace --all-targets"
 
-[tasks.fmt-core]
-description = "Format Rust sources"
-run = "cargo fmt --manifest-path rust/prism_core/Cargo.toml"
+[tasks.fmt-rust]
+description = "Format Rust sources across the workspace"
+run = "cargo fmt --manifest-path rust/Cargo.toml --all"
 
-[tasks.clippy-core]
-description = "Run Clippy on the Rust core library"
-run = "cargo clippy --manifest-path rust/prism_core/Cargo.toml --all-targets --all-features -- -D warnings"
+[tasks.lint-rust]
+description = "Run Clippy on all Rust crates"
+run = "cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings"
 
 [tasks.swift-bindings]
 description = "Generate Swift bindings from the UniFFI interface"
@@ -31,4 +31,4 @@ run = "swift test --package-path swift/PrismFFI"
 
 [tasks.test]
 description = "Run all tests (Rust core + Swift FFI)"
-run = "cargo test --manifest-path rust/prism_core/Cargo.toml && swift test --package-path swift/PrismFFI"
+run = "cargo test --manifest-path rust/Cargo.toml --workspace --all-targets && swift test --package-path swift/PrismFFI"

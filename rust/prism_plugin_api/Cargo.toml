@@ -1,0 +1,11 @@
+ [package]
+ name = "prism_plugin_api"
+ version = "0.1.0"
+ edition = "2021"
+ description = "Prism agent plugin interfaces and registry utilities"
+ publish = false
+
+ [dependencies]
+ prism_api = { path = "../prism_api" }
+ serde = { version = "1.0", features = ["derive"] }
+ thiserror = "1.0"
