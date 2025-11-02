@@ -204,6 +204,7 @@ private struct DiffHunkView: View {
           let lineThreads = locations.flatMap { threads[$0] ?? [] }
           DiffLineBlockView(
             line: line,
+            locations: locations,
             threads: lineThreads,
             preferredLocation: line.preferredComposerLocation(newPath: newPath, basePath: basePath),
             onAddComment: onAddComment
@@ -252,6 +253,8 @@ private struct DiffHunkHeaderView: View {
 
 private struct DiffLineRow: View {
   var line: DiffLinePairViewModel
+  var onSelectBase: (() -> Void)? = nil
+  var onSelectHead: (() -> Void)? = nil
 
   var body: some View {
     HStack(spacing: 0) {
@@ -260,6 +263,8 @@ private struct DiffLineRow: View {
         text: baseText,
         background: baseBackground
       )
+      .contentShape(Rectangle())
+      .onTapGesture { onSelectBase?() }
 
       Rectangle()
         .fill(Color(nsColor: .separatorColor).opacity(0.35))
@@ -270,6 +275,8 @@ private struct DiffLineRow: View {
         text: headText,
         background: headBackground
       )
+      .contentShape(Rectangle())
+      .onTapGesture { onSelectHead?() }
     }
     .frame(maxWidth: .infinity)
   }
@@ -340,24 +347,30 @@ private struct LineNumberView: View {
 
 private struct DiffLineBlockView: View {
   var line: DiffLinePairViewModel
+  var locations: [InlineThreadLocation]
   var threads: [InlineThreadViewModel]
   var preferredLocation: InlineThreadLocation?
   var onAddComment: (InlineCommentDraft) -> Void
 
   @State private var isComposerVisible = false
   @State private var draftText = ""
+  @State private var activeLocation: InlineThreadLocation?
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
       CommentGutterView(
-        canAddComment: preferredLocation != nil,
+        canAddComment: !locations.isEmpty,
         isComposerVisible: isComposerVisible,
         hasDiscussion: !threads.isEmpty || isComposerVisible,
         onShowComposer: showComposer
       )
 
       VStack(alignment: .leading, spacing: 12) {
-        DiffLineRow(line: line)
+        DiffLineRow(
+          line: line,
+          onSelectBase: baseLocation.map { location in { showComposer(at: location) } },
+          onSelectHead: headLocation.map { location in { showComposer(at: location) } }
+        )
 
         if !threads.isEmpty {
           VStack(alignment: .leading, spacing: 12) {
@@ -384,14 +397,19 @@ private struct DiffLineBlockView: View {
   }
 
   private func showComposer() {
-    guard preferredLocation != nil else { return }
+    showComposer(at: nil)
+  }
+
+  private func showComposer(at location: InlineThreadLocation?) {
+    guard let resolved = location ?? activeLocation ?? defaultComposerLocation else { return }
+    activeLocation = resolved
     withAnimation(.easeInOut(duration: 0.15)) {
       isComposerVisible = true
     }
   }
 
   private func submitDraft() {
-    guard let location = preferredLocation else { return }
+    guard let location = resolvedComposerLocation else { return }
     let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     onAddComment(InlineCommentDraft(location: location, body: trimmed))
@@ -399,6 +417,7 @@ private struct DiffLineBlockView: View {
     withAnimation(.easeInOut(duration: 0.15)) {
       isComposerVisible = false
     }
+    activeLocation = nil
   }
 
   private func cancelDraft() {
@@ -406,13 +425,30 @@ private struct DiffLineBlockView: View {
     withAnimation(.easeInOut(duration: 0.15)) {
       isComposerVisible = false
     }
+    activeLocation = nil
   }
 
   private func applyLabel(_ label: InlineQuickLabel) {
     if !draftText.hasPrefix(label.prefix) {
       draftText = label.prefix + draftText
     }
-    showComposer()
+    showComposer(at: resolvedComposerLocation)
+  }
+
+  private var baseLocation: InlineThreadLocation? {
+    locations.first { $0.diffSide == .base }
+  }
+
+  private var headLocation: InlineThreadLocation? {
+    locations.first { $0.diffSide == .head }
+  }
+
+  private var defaultComposerLocation: InlineThreadLocation? {
+    preferredLocation ?? locations.first
+  }
+
+  private var resolvedComposerLocation: InlineThreadLocation? {
+    activeLocation ?? defaultComposerLocation
   }
 }
 
