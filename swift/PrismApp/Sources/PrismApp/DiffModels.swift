@@ -63,13 +63,14 @@ struct DiffHunkViewModel: Identifiable, Equatable {
   var id: String
   var header: DiffRange
   var section: String?
-  var lines: [DiffLineViewModel]
+  var rows: [DiffLinePairViewModel]
 
   init(hunk: DiffHunk, index: Int) {
     self.id = "hunk_\(index)_\(hunk.header.baseStart)_\(hunk.header.headStart)"
     self.header = hunk.header
     self.section = hunk.section
-    self.lines = hunk.lines.enumerated().map { DiffLineViewModel(line: $0.element, index: $0.offset) }
+    let lineViewModels = hunk.lines.enumerated().map { DiffLineViewModel(line: $0.element, index: $0.offset) }
+    self.rows = DiffLinePairViewModel.buildRows(from: lineViewModels)
   }
 }
 
@@ -90,6 +91,54 @@ struct DiffLineViewModel: Identifiable, Equatable {
     self.baseLine = line.baseLine
     self.headLine = line.headLine
     self.highlights = line.highlights
+  }
+}
+
+struct DiffLinePairViewModel: Identifiable, Equatable {
+  typealias ID = String
+
+  var id: String
+  var base: DiffLineViewModel?
+  var head: DiffLineViewModel?
+
+  static func buildRows(from lines: [DiffLineViewModel]) -> [DiffLinePairViewModel] {
+    var result: [DiffLinePairViewModel] = []
+    var index = 0
+
+    while index < lines.count {
+      let line = lines[index]
+
+      switch line.kind {
+      case .context:
+        result.append(DiffLinePairViewModel(id: "row_\(line.id)", base: line, head: line))
+        index += 1
+
+      case .addition, .deletion:
+        var deletions: [DiffLineViewModel] = []
+        var additions: [DiffLineViewModel] = []
+
+        while index < lines.count, lines[index].kind != .context {
+          let current = lines[index]
+          if current.kind == .deletion {
+            deletions.append(current)
+          } else if current.kind == .addition {
+            additions.append(current)
+          }
+          index += 1
+        }
+
+        let pairCount = max(deletions.count, additions.count)
+
+        for pairIndex in 0..<pairCount {
+          let base = pairIndex < deletions.count ? deletions[pairIndex] : nil
+          let head = pairIndex < additions.count ? additions[pairIndex] : nil
+          let identifier = base?.id ?? head?.id ?? UUID().uuidString
+          result.append(DiffLinePairViewModel(id: "row_\(identifier)", base: base, head: head))
+        }
+      }
+    }
+
+    return result
   }
 }
 
@@ -157,6 +206,42 @@ extension DiffLineViewModel {
     if let baseLine {
       let path = basePath ?? newPath
       return InlineThreadLocation(filePath: path, diffSide: .base, line: Int(baseLine))
+    }
+
+    return nil
+  }
+}
+
+extension DiffLinePairViewModel {
+  func inlineLocations(newPath: String, basePath: String?) -> [InlineThreadLocation] {
+    var locations: [InlineThreadLocation] = []
+    var seen: Set<InlineThreadLocation> = []
+
+    if let base {
+      for location in base.inlineLocations(newPath: newPath, basePath: basePath) where seen.insert(location).inserted {
+        locations.append(location)
+      }
+    }
+
+    if let head {
+      let isDuplicateContext = head.id == base?.id
+      if !isDuplicateContext {
+        for location in head.inlineLocations(newPath: newPath, basePath: basePath) where seen.insert(location).inserted {
+          locations.append(location)
+        }
+      }
+    }
+
+    return locations
+  }
+
+  func preferredComposerLocation(newPath: String, basePath: String?) -> InlineThreadLocation? {
+    if let head, let location = head.preferredComposerLocation(newPath: newPath, basePath: basePath) {
+      return location
+    }
+
+    if let base, let location = base.preferredComposerLocation(newPath: newPath, basePath: basePath) {
+      return location
     }
 
     return nil

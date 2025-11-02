@@ -199,8 +199,7 @@ private struct DiffHunkView: View {
       DiffHunkHeaderView(hunk: hunk)
 
       VStack(spacing: 0) {
-        ForEach(Array(hunk.lines.indices), id: \.self) { index in
-          let line = hunk.lines[index]
+        ForEach(Array(hunk.rows.enumerated()), id: \.element.id) { index, line in
           let locations = line.inlineLocations(newPath: newPath, basePath: basePath)
           let lineThreads = locations.flatMap { threads[$0] ?? [] }
           DiffLineBlockView(
@@ -209,7 +208,7 @@ private struct DiffHunkView: View {
             preferredLocation: line.preferredComposerLocation(newPath: newPath, basePath: basePath),
             onAddComment: onAddComment
           )
-          if index < hunk.lines.count - 1 {
+          if index < hunk.rows.count - 1 {
             Divider()
           }
         }
@@ -252,46 +251,95 @@ private struct DiffHunkHeaderView: View {
 }
 
 private struct DiffLineRow: View {
-  var line: DiffLineViewModel
+  var line: DiffLinePairViewModel
 
   var body: some View {
-    HStack(alignment: .top, spacing: 8) {
-      lineNumber(line.baseLine)
-        .frame(width: 50, alignment: .trailing)
+    HStack(spacing: 0) {
+      DiffLineSideView(
+        number: line.base?.baseLine,
+        text: baseText,
+        background: baseBackground
+      )
 
-      lineNumber(line.headLine)
-        .frame(width: 50, alignment: .trailing)
+      Rectangle()
+        .fill(Color(nsColor: .separatorColor).opacity(0.35))
+        .frame(width: 1)
 
-      Text(verbatim: line.text)
-        .font(.system(size: 13, design: .monospaced))
-        .frame(maxWidth: .infinity, alignment: .leading)
+      DiffLineSideView(
+        number: line.head?.headLine,
+        text: headText,
+        background: headBackground
+      )
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 2)
-    .background(backgroundColor)
+    .frame(maxWidth: .infinity)
   }
 
-  private func lineNumber(_ value: UInt32?) -> Text {
-    if let value {
-      return Text("\(value)").font(.system(size: 11, design: .monospaced))
-    }
-    return Text(" ").font(.system(size: 11, design: .monospaced))
-  }
+  private var baseText: String { line.base?.text ?? "" }
+  private var headText: String { line.head?.text ?? "" }
 
-  private var backgroundColor: Color {
-    switch line.kind {
-    case .context:
+  private var baseBackground: Color {
+    switch line.base?.kind {
+    case .deletion:
+      return Color.red.opacity(0.15)
+    case .addition:
+      return Color.green.opacity(0.08)
+    default:
       return Color.clear
+    }
+  }
+
+  private var headBackground: Color {
+    switch line.head?.kind {
     case .addition:
       return Color.green.opacity(0.15)
     case .deletion:
-      return Color.red.opacity(0.15)
+      return Color.red.opacity(0.08)
+    default:
+      return Color.clear
     }
   }
 }
 
+private struct DiffLineSideView: View {
+  var number: UInt32?
+  var text: String
+  var background: Color
+
+  private let numberColumnWidth: CGFloat = 48
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      LineNumberView(number: number)
+        .frame(width: numberColumnWidth, alignment: .trailing)
+
+      Text(verbatim: text)
+        .font(.system(size: 13, design: .monospaced))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(.vertical, 4)
+    .padding(.horizontal, 8)
+    .background(background)
+  }
+}
+
+private struct LineNumberView: View {
+  var number: UInt32?
+
+  var body: some View {
+    Group {
+      if let number {
+        Text("\(number)")
+      } else {
+        Text(" ")
+      }
+    }
+    .font(.system(size: 11, design: .monospaced))
+    .foregroundStyle(.secondary)
+  }
+}
+
 private struct DiffLineBlockView: View {
-  var line: DiffLineViewModel
+  var line: DiffLinePairViewModel
   var threads: [InlineThreadViewModel]
   var preferredLocation: InlineThreadLocation?
   var onAddComment: (InlineCommentDraft) -> Void
@@ -300,37 +348,45 @@ private struct DiffLineBlockView: View {
   @State private var draftText = ""
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      ZStack(alignment: .topTrailing) {
+    HStack(alignment: .top, spacing: 12) {
+      CommentGutterView(
+        canAddComment: preferredLocation != nil,
+        isComposerVisible: isComposerVisible,
+        hasDiscussion: !threads.isEmpty || isComposerVisible,
+        onShowComposer: showComposer
+      )
+
+      VStack(alignment: .leading, spacing: 12) {
         DiffLineRow(line: line)
-        if preferredLocation != nil, !isComposerVisible {
-          Button {
-            isComposerVisible = true
-          } label: {
-            Image(systemName: "plus.bubble")
-              .imageScale(.small)
-              .padding(6)
-              .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
-              .clipShape(Circle())
+
+        if !threads.isEmpty {
+          VStack(alignment: .leading, spacing: 12) {
+            ForEach(threads) { thread in
+              InlineThreadCardView(thread: thread)
+            }
           }
-          .buttonStyle(.plain)
-          .padding(.top, 2)
-          .padding(.trailing, 6)
+        }
+
+        if isComposerVisible {
+          InlineCommentComposerView(
+            text: $draftText,
+            onSubmit: submitDraft,
+            onCancel: cancelDraft,
+            onApplyLabel: applyLabel
+          )
+          .transition(.move(edge: .top).combined(with: .opacity))
         }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(.vertical, 6)
+    .padding(.horizontal, 8)
+  }
 
-      ForEach(threads) { thread in
-        InlineThreadCardView(thread: thread)
-      }
-
-      if isComposerVisible {
-        InlineCommentComposerView(
-          text: $draftText,
-          onSubmit: submitDraft,
-          onCancel: cancelDraft,
-          onApplyLabel: applyLabel
-        )
-      }
+  private func showComposer() {
+    guard preferredLocation != nil else { return }
+    withAnimation(.easeInOut(duration: 0.15)) {
+      isComposerVisible = true
     }
   }
 
@@ -340,19 +396,67 @@ private struct DiffLineBlockView: View {
     guard !trimmed.isEmpty else { return }
     onAddComment(InlineCommentDraft(location: location, body: trimmed))
     draftText = ""
-    isComposerVisible = false
+    withAnimation(.easeInOut(duration: 0.15)) {
+      isComposerVisible = false
+    }
   }
 
   private func cancelDraft() {
     draftText = ""
-    isComposerVisible = false
+    withAnimation(.easeInOut(duration: 0.15)) {
+      isComposerVisible = false
+    }
   }
 
   private func applyLabel(_ label: InlineQuickLabel) {
     if !draftText.hasPrefix(label.prefix) {
       draftText = label.prefix + draftText
     }
-    isComposerVisible = true
+    showComposer()
+  }
+}
+
+private struct CommentGutterView: View {
+  var canAddComment: Bool
+  var isComposerVisible: Bool
+  var hasDiscussion: Bool
+  var onShowComposer: () -> Void
+
+  var body: some View {
+    VStack(spacing: 8) {
+      if canAddComment {
+        Button(action: onShowComposer) {
+          Image(systemName: "plus")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(isComposerVisible ? Color.white : Color.accentColor)
+            .frame(width: 24, height: 24)
+            .background(
+              Circle()
+                .fill(isComposerVisible ? Color.accentColor : Color(nsColor: .windowBackgroundColor))
+            )
+            .overlay(
+              Circle()
+                .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add inline comment")
+      } else {
+        Circle()
+          .fill(Color.clear)
+          .frame(width: 24, height: 24)
+      }
+
+      if hasDiscussion {
+        Rectangle()
+          .fill(Color(nsColor: .separatorColor).opacity(0.4))
+          .frame(width: 2)
+          .frame(maxHeight: .infinity)
+      }
+
+      Spacer(minLength: 0)
+    }
+    .frame(width: 32, alignment: .top)
   }
 }
 
@@ -360,39 +464,64 @@ private struct InlineThreadCardView: View {
   var thread: InlineThreadViewModel
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 12) {
       if let title = thread.title, !title.isEmpty {
         Text(title)
           .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
       }
 
-      ForEach(thread.comments) { comment in
-        VStack(alignment: .leading, spacing: 4) {
-          if let author = comment.authorName, !author.isEmpty {
-            HStack(spacing: 6) {
-              Text(author)
-                .font(.caption.weight(.medium))
-              if let createdAt = comment.createdAt {
-                Text(createdAt, style: .relative)
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-            }
-          }
+      VStack(alignment: .leading, spacing: 12) {
+        ForEach(Array(thread.comments.enumerated()), id: \.element.id) { index, comment in
+          InlineThreadCommentView(comment: comment)
 
-          Text(comment.body)
-            .font(.body)
+          if index < thread.comments.count - 1 {
+            Divider()
+              .foregroundStyle(Color(nsColor: .separatorColor).opacity(0.4))
+          }
         }
-        .padding(8)
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8)
-            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-        )
+      }
+
+      if let updated = thread.lastUpdated {
+        Text("Updated \(updated, style: .relative)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
-    .padding(.leading, 16)
+    .padding(16)
+    .background(
+      RoundedRectangle(cornerRadius: 12)
+        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.95))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 12)
+        .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
+    )
+  }
+}
+
+private struct InlineThreadCommentView: View {
+  var comment: InlineCommentViewModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if let author = comment.authorName, !author.isEmpty {
+        HStack(spacing: 6) {
+          Text(author)
+            .font(.footnote.weight(.semibold))
+
+          if let createdAt = comment.createdAt {
+            Text(createdAt, style: .relative)
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+
+      Text(comment.body)
+        .font(.body)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 }
 
@@ -402,45 +531,71 @@ private struct InlineCommentComposerView: View {
   var onCancel: () -> Void
   var onApplyLabel: (InlineQuickLabel) -> Void
 
+  private var isSubmitDisabled: Bool {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("New inline comment")
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(.secondary)
+
+      TextEditor(text: $text)
+        .frame(minHeight: 96)
+        .padding(10)
+        .background(
+          RoundedRectangle(cornerRadius: 10)
+            .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 10)
+            .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
+        )
+
       HStack(spacing: 8) {
         ForEach(InlineQuickLabel.allCases, id: \.self) { label in
           Button(label.displayName) {
             onApplyLabel(label)
           }
-          .buttonStyle(.borderless)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(Color.accentColor.opacity(0.15))
-          .clipShape(Capsule())
+          .buttonStyle(QuickLabelButtonStyle())
         }
-      }
-
-      TextEditor(text: $text)
-        .frame(minHeight: 80)
-        .padding(8)
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8)
-            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-        )
-
-      HStack {
-        Button("Cancel", action: onCancel)
 
         Spacer()
 
+        Button("Cancel", action: onCancel)
+          .buttonStyle(.bordered)
+
         Button("Add Comment", action: onSubmit)
-          .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .buttonStyle(.borderedProminent)
+          .disabled(isSubmitDisabled)
           .keyboardShortcut(.return, modifiers: [.command])
       }
     }
-    .padding(12)
-    .background(Color(nsColor: .windowBackgroundColor))
-    .clipShape(RoundedRectangle(cornerRadius: 10))
-    .padding(.leading, 16)
+    .padding(16)
+    .background(
+      RoundedRectangle(cornerRadius: 12)
+        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.95))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 12)
+        .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
+    )
+  }
+}
+
+private struct QuickLabelButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.footnote.weight(.semibold))
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .background(
+        Capsule()
+          .fill(Color.accentColor.opacity(configuration.isPressed ? 0.3 : 0.18))
+      )
+      .foregroundStyle(Color.accentColor)
+      .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
   }
 }
 
