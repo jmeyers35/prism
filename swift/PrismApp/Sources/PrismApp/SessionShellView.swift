@@ -166,6 +166,9 @@ private struct FilesDetail: View {
         ),
         reload: {
           Task { await sessionStore.reloadDiff() }
+        },
+        onAddComment: { draft in
+          sessionStore.addInlineComment(draft)
         }
       )
     }

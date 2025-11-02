@@ -5,6 +5,7 @@ struct DiffBrowserView: View {
   var viewModel: DiffBrowserViewModel
   @Binding var selection: DiffFileViewModel.ID?
   var reload: () -> Void
+  var onAddComment: (InlineCommentDraft) -> Void
 
   var body: some View {
     HStack(spacing: 0) {
@@ -13,7 +14,12 @@ struct DiffBrowserView: View {
 
       Divider()
 
-      DiffFileDetailView(file: viewModel.file(withID: selection), reload: reload)
+      DiffFileDetailView(
+        file: viewModel.file(withID: selection),
+        threads: viewModel.inlineThreads,
+        reload: reload,
+        onAddComment: onAddComment
+      )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .background(Color(nsColor: .windowBackgroundColor))
@@ -112,7 +118,9 @@ private struct DiffFileRow: View {
 
 private struct DiffFileDetailView: View {
   var file: DiffFileViewModel?
+  var threads: [InlineThreadLocation: [InlineThreadViewModel]]
   var reload: () -> Void
+  var onAddComment: (InlineCommentDraft) -> Void
 
   var body: some View {
     Group {
@@ -125,7 +133,13 @@ private struct DiffFileDetailView: View {
           ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
               ForEach(file.hunks) { hunk in
-                DiffHunkView(hunk: hunk)
+                DiffHunkView(
+                  newPath: file.path,
+                  basePath: file.oldPath,
+                  hunk: hunk,
+                  threads: threads,
+                  onAddComment: onAddComment
+                )
               }
             }
             .padding(20)
@@ -174,7 +188,11 @@ private struct EmptyDiffView: View {
 }
 
 private struct DiffHunkView: View {
+  var newPath: String
+  var basePath: String?
   var hunk: DiffHunkViewModel
+  var threads: [InlineThreadLocation: [InlineThreadViewModel]]
+  var onAddComment: (InlineCommentDraft) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -182,7 +200,15 @@ private struct DiffHunkView: View {
 
       VStack(spacing: 0) {
         ForEach(Array(hunk.lines.indices), id: \.self) { index in
-          DiffLineRow(line: hunk.lines[index])
+          let line = hunk.lines[index]
+          let locations = line.inlineLocations(newPath: newPath, basePath: basePath)
+          let lineThreads = locations.flatMap { threads[$0] ?? [] }
+          DiffLineBlockView(
+            line: line,
+            threads: lineThreads,
+            preferredLocation: line.preferredComposerLocation(newPath: newPath, basePath: basePath),
+            onAddComment: onAddComment
+          )
           if index < hunk.lines.count - 1 {
             Divider()
           }
@@ -264,6 +290,160 @@ private struct DiffLineRow: View {
   }
 }
 
+private struct DiffLineBlockView: View {
+  var line: DiffLineViewModel
+  var threads: [InlineThreadViewModel]
+  var preferredLocation: InlineThreadLocation?
+  var onAddComment: (InlineCommentDraft) -> Void
+
+  @State private var isComposerVisible = false
+  @State private var draftText = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      ZStack(alignment: .topTrailing) {
+        DiffLineRow(line: line)
+        if preferredLocation != nil, !isComposerVisible {
+          Button {
+            isComposerVisible = true
+          } label: {
+            Image(systemName: "plus.bubble")
+              .imageScale(.small)
+              .padding(6)
+              .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+              .clipShape(Circle())
+          }
+          .buttonStyle(.plain)
+          .padding(.top, 2)
+          .padding(.trailing, 6)
+        }
+      }
+
+      ForEach(threads) { thread in
+        InlineThreadCardView(thread: thread)
+      }
+
+      if isComposerVisible {
+        InlineCommentComposerView(
+          text: $draftText,
+          onSubmit: submitDraft,
+          onCancel: cancelDraft,
+          onApplyLabel: applyLabel
+        )
+      }
+    }
+  }
+
+  private func submitDraft() {
+    guard let location = preferredLocation else { return }
+    let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    onAddComment(InlineCommentDraft(location: location, body: trimmed))
+    draftText = ""
+    isComposerVisible = false
+  }
+
+  private func cancelDraft() {
+    draftText = ""
+    isComposerVisible = false
+  }
+
+  private func applyLabel(_ label: InlineQuickLabel) {
+    if !draftText.hasPrefix(label.prefix) {
+      draftText = label.prefix + draftText
+    }
+    isComposerVisible = true
+  }
+}
+
+private struct InlineThreadCardView: View {
+  var thread: InlineThreadViewModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if let title = thread.title, !title.isEmpty {
+        Text(title)
+          .font(.caption.weight(.semibold))
+      }
+
+      ForEach(thread.comments) { comment in
+        VStack(alignment: .leading, spacing: 4) {
+          if let author = comment.authorName, !author.isEmpty {
+            HStack(spacing: 6) {
+              Text(author)
+                .font(.caption.weight(.medium))
+              if let createdAt = comment.createdAt {
+                Text(createdAt, style: .relative)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+
+          Text(comment.body)
+            .font(.body)
+        }
+        .padding(8)
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8)
+            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+      }
+    }
+    .padding(.leading, 16)
+  }
+}
+
+private struct InlineCommentComposerView: View {
+  @Binding var text: String
+  var onSubmit: () -> Void
+  var onCancel: () -> Void
+  var onApplyLabel: (InlineQuickLabel) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        ForEach(InlineQuickLabel.allCases, id: \.self) { label in
+          Button(label.displayName) {
+            onApplyLabel(label)
+          }
+          .buttonStyle(.borderless)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(Color.accentColor.opacity(0.15))
+          .clipShape(Capsule())
+        }
+      }
+
+      TextEditor(text: $text)
+        .frame(minHeight: 80)
+        .padding(8)
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8)
+            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+
+      HStack {
+        Button("Cancel", action: onCancel)
+
+        Spacer()
+
+        Button("Add Comment", action: onSubmit)
+          .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .keyboardShortcut(.return, modifiers: [.command])
+      }
+    }
+    .padding(12)
+    .background(Color(nsColor: .windowBackgroundColor))
+    .clipShape(RoundedRectangle(cornerRadius: 10))
+    .padding(.leading, 16)
+  }
+}
+
 #if DEBUG
   private enum DiffPreviewFactory {
     static func previewViewModel() -> DiffBrowserViewModel {
@@ -296,7 +476,22 @@ private struct DiffLineRow: View {
         files: [file]
       )
 
-      return DiffBrowserViewModel(diff: diff)
+      let location = InlineThreadLocation(filePath: file.path, diffSide: .head, line: 11)
+      let comment = InlineCommentViewModel(
+        id: UUID(),
+        authorName: "Reviewer",
+        body: "Consider renaming this method for clarity.",
+        createdAt: Date()
+      )
+      let thread = InlineThreadViewModel(
+        id: UUID(),
+        pluginID: "preview",
+        location: location,
+        title: "Preview Thread",
+        comments: [comment]
+      )
+
+      return DiffBrowserViewModel(diff: diff, threads: [thread])
     }
   }
 
@@ -306,7 +501,8 @@ private struct DiffLineRow: View {
       DiffBrowserView(
         viewModel: viewModel,
         selection: .constant(viewModel.files.first?.id),
-        reload: {}
+        reload: {},
+        onAddComment: { _ in }
       )
       .frame(width: 800, height: 480)
     }

@@ -151,6 +151,8 @@ protocol SessionPersisting {
   @discardableResult
   func upsertSession(from viewModel: SessionViewModel, openedAt date: Date) throws -> StoredSession
   func deleteSession(id: UUID) throws
+  @discardableResult
+  func addThread(for repositoryPath: String, pluginID: String, payload: SessionStorage.ThreadPayload) throws -> StoredSession.StoredThread
 }
 
 @MainActor
@@ -285,6 +287,39 @@ final class SessionStorage: SessionPersisting {
         let rhsDate = rhs.lastUpdated ?? rhs.createdAt ?? Date.distantPast
         return lhsDate > rhsDate
       }
+  }
+
+  @discardableResult
+  func addThread(for repositoryPath: String, pluginID: String, payload: ThreadPayload) throws -> StoredSession.StoredThread {
+    guard let session = try findSession(repositoryPath: repositoryPath) else {
+      throw SessionStorageError.sessionNotFound
+    }
+
+    let thread = ThreadEntity(context: context)
+    thread.id = payload.id ?? UUID()
+    thread.externalID = payload.externalID
+    thread.pluginID = pluginID
+    thread.title = payload.title
+    thread.createdAt = payload.createdAt ?? Date()
+    thread.lastUpdated = payload.lastUpdated ?? payload.createdAt ?? Date()
+    thread.session = session
+
+    payload.comments.forEach { commentPayload in
+      let comment = CommentEntity(context: context)
+      comment.id = commentPayload.id ?? UUID()
+      comment.externalID = commentPayload.externalID
+      comment.authorName = commentPayload.authorName
+      comment.body = commentPayload.body
+      comment.createdAt = commentPayload.createdAt ?? Date()
+      comment.filePath = commentPayload.filePath
+      comment.lineNumber = commentPayload.lineNumber.map { NSNumber(value: $0) }
+      comment.columnNumber = commentPayload.columnNumber.map { NSNumber(value: $0) }
+      comment.diffSide = commentPayload.diffSide
+      comment.thread = thread
+    }
+
+    try saveIfNeeded()
+    return StoredSession.StoredThread(entity: thread)
   }
 
   private func findSession(repositoryPath: String) throws -> SessionEntity? {

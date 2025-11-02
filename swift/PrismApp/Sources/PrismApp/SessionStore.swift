@@ -5,6 +5,8 @@ import PrismFFI
 
 @MainActor
 final class SessionStore: ObservableObject {
+  private static let inlineThreadPluginID = "local-inline"
+
   @Published private(set) var phase: SessionPhase = .idle
   @Published private(set) var diffPhase: DiffPhase = .idle
   @Published var selectedDiffFileID: DiffFileViewModel.ID?
@@ -131,6 +133,17 @@ final class SessionStore: ObservableObject {
     activeSession != nil
   }
 
+  private var activeRepositoryPath: String? {
+    switch phase {
+    case .ready(let viewModel):
+      return viewModel.repositoryPath
+    case .loading(let url):
+      return url.path
+    default:
+      return nil
+    }
+  }
+
   func removeStoredSession(id: UUID) {
     do {
       try storage.deleteSession(id: id)
@@ -138,6 +151,50 @@ final class SessionStore: ObservableObject {
     } catch {
       NSLog("Failed to delete stored session: \(error)")
       assertionFailure("Failed to delete stored session: \(error)")
+    }
+  }
+
+  func addInlineComment(_ draft: InlineCommentDraft) {
+    let trimmed = draft.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    guard let repositoryPath = activeRepositoryPath else { return }
+
+    let now = Date()
+    let commentPayload = SessionStorage.CommentPayload(
+      id: UUID(),
+      externalID: nil,
+      authorName: "You",
+      body: trimmed,
+      createdAt: now,
+      filePath: draft.location.filePath,
+      lineNumber: draft.location.line,
+      columnNumber: nil,
+      diffSide: storageSide(for: draft.location.diffSide)
+    )
+
+    let threadPayload = SessionStorage.ThreadPayload(
+      id: UUID(),
+      externalID: nil,
+      title: nil,
+      createdAt: now,
+      lastUpdated: now,
+      comments: [commentPayload]
+    )
+
+    do {
+      let storedThread = try storage.addThread(
+        for: repositoryPath,
+        pluginID: Self.inlineThreadPluginID,
+        payload: threadPayload
+      )
+      storedSessions = try storage.fetchSessions()
+
+      if case .loaded(let currentViewModel) = diffPhase,
+         let inlineThread = inlineThreadViewModel(from: storedThread) {
+        diffPhase = .loaded(currentViewModel.adding(thread: inlineThread))
+      }
+    } catch {
+      NSLog("Failed to store inline comment: \(error)")
     }
   }
 
@@ -166,7 +223,8 @@ final class SessionStore: ObservableObject {
       guard let currentSession = activeSession else { return }
       guard ObjectIdentifier(currentSession as AnyObject) == sessionID else { return }
 
-      let viewModel = DiffBrowserViewModel(diff: diff)
+      let threads = activeRepositoryPath.flatMap { inlineThreads(for: $0) } ?? []
+      let viewModel = DiffBrowserViewModel(diff: diff, threads: threads)
       diffPhase = .loaded(viewModel)
 
       if let preferredSelection,
@@ -223,6 +281,65 @@ final class SessionStore: ObservableObject {
     } catch {
       NSLog("Failed to persist session: \(error)")
       assertionFailure("Failed to persist session: \(error)")
+    }
+  }
+
+  private func inlineThreads(for repositoryPath: String) -> [InlineThreadViewModel] {
+    guard let session = storedSessions.first(where: { $0.repositoryPath == repositoryPath }) else {
+      return []
+    }
+
+    return session.threads.compactMap(inlineThreadViewModel(from:))
+  }
+
+  private func inlineThreadViewModel(from thread: StoredSession.StoredThread) -> InlineThreadViewModel? {
+    guard let anchor = thread.comments.first(where: { comment in
+      comment.filePath != nil && comment.lineNumber != nil
+    }),
+    let filePath = anchor.filePath,
+    let line = anchor.lineNumber else {
+      return nil
+    }
+
+    let location = InlineThreadLocation(
+      filePath: filePath,
+      diffSide: diffSide(from: anchor.diffSide),
+      line: line
+    )
+
+    let comments = thread.comments.map { comment in
+      InlineCommentViewModel(
+        id: comment.id,
+        authorName: comment.authorName,
+        body: comment.body,
+        createdAt: comment.createdAt
+      )
+    }
+
+    return InlineThreadViewModel(
+      id: thread.id,
+      pluginID: thread.pluginID,
+      location: location,
+      title: thread.title,
+      comments: comments
+    )
+  }
+
+  private func diffSide(from rawValue: String?) -> DiffSide {
+    switch rawValue?.lowercased() {
+    case "base":
+      return .base
+    default:
+      return .head
+    }
+  }
+
+  private func storageSide(for side: DiffSide) -> String {
+    switch side {
+    case .base:
+      return "base"
+    case .head:
+      return "head"
     }
   }
 }
