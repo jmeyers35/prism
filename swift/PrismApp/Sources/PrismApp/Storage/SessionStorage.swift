@@ -153,6 +153,9 @@ protocol SessionPersisting {
   func deleteSession(id: UUID) throws
   @discardableResult
   func addThread(for repositoryPath: String, pluginID: String, payload: SessionStorage.ThreadPayload) throws -> StoredSession.StoredThread
+  @discardableResult
+  func replaceThreads(for repositoryPath: String, pluginID: String, threads: [SessionStorage.ThreadPayload]) throws -> [StoredSession.StoredThread]
+  func threads(for repositoryPath: String, pluginID: String) throws -> [StoredSession.StoredThread]
 }
 
 @MainActor

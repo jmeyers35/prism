@@ -36,6 +36,13 @@ final class SessionStoreTests: XCTestCase {
 
     XCTAssertTrue(diffViewModel.files.isEmpty)
     XCTAssertNil(store.selectedDiffFileID)
+
+    XCTAssertEqual(store.attachModel?.selectedPluginID, "amp")
+    XCTAssertNil(store.attachedPluginSession)
+
+    await store.attachSelectedPlugin()
+    XCTAssertNotNil(store.attachedPluginSession)
+    XCTAssertTrue(store.isPluginAttached)
   }
 
   func testOpenSessionFailure() async {
@@ -282,6 +289,80 @@ private final class InMemorySessionPersistence: SessionPersisting {
   func deleteSession(id: UUID) throws {
     sessions.removeAll { $0.id == id }
   }
+
+  @discardableResult
+  func addThread(for repositoryPath: String, pluginID: String, payload: SessionStorage.ThreadPayload) throws -> StoredSession.StoredThread {
+    guard let index = sessions.firstIndex(where: { $0.repositoryPath == repositoryPath }) else {
+      throw SessionStorageError.sessionNotFound
+    }
+
+    let thread = makeThread(from: payload, pluginID: pluginID)
+    var session = sessions[index]
+    var threads = session.threads
+    threads.append(thread)
+    sortThreads(&threads)
+    session.threads = threads
+    sessions[index] = session
+    return thread
+  }
+
+  @discardableResult
+  func replaceThreads(for repositoryPath: String, pluginID: String, threads: [SessionStorage.ThreadPayload]) throws -> [StoredSession.StoredThread] {
+    guard let index = sessions.firstIndex(where: { $0.repositoryPath == repositoryPath }) else {
+      throw SessionStorageError.sessionNotFound
+    }
+
+    var session = sessions[index]
+    var updatedThreads = session.threads.filter { $0.pluginID != pluginID }
+    let newThreads = threads.map { makeThread(from: $0, pluginID: pluginID) }
+    updatedThreads.append(contentsOf: newThreads)
+    sortThreads(&updatedThreads)
+    session.threads = updatedThreads
+    sessions[index] = session
+    return newThreads
+  }
+
+  func threads(for repositoryPath: String, pluginID: String) throws -> [StoredSession.StoredThread] {
+    guard let session = sessions.first(where: { $0.repositoryPath == repositoryPath }) else {
+      return []
+    }
+
+    return session.threads.filter { $0.pluginID == pluginID }
+  }
+
+  private func makeThread(from payload: SessionStorage.ThreadPayload, pluginID: String) -> StoredSession.StoredThread {
+    let comments = payload.comments.map { comment -> StoredSession.StoredThread.StoredComment in
+      StoredSession.StoredThread.StoredComment(
+        id: comment.id ?? UUID(),
+        externalID: comment.externalID,
+        authorName: comment.authorName,
+        body: comment.body,
+        createdAt: comment.createdAt,
+        filePath: comment.filePath,
+        lineNumber: comment.lineNumber,
+        columnNumber: comment.columnNumber,
+        diffSide: comment.diffSide
+      )
+    }
+
+    return StoredSession.StoredThread(
+      id: payload.id ?? UUID(),
+      externalID: payload.externalID,
+      pluginID: pluginID,
+      title: payload.title,
+      createdAt: payload.createdAt,
+      lastUpdated: payload.lastUpdated ?? payload.createdAt,
+      comments: comments
+    )
+  }
+
+  private func sortThreads(_ threads: inout [StoredSession.StoredThread]) {
+    threads.sort { lhs, rhs in
+      let lhsDate = lhs.lastUpdated ?? lhs.createdAt ?? Date.distantPast
+      let rhsDate = rhs.lastUpdated ?? rhs.createdAt ?? Date.distantPast
+      return lhsDate > rhsDate
+    }
+  }
 }
 
 private enum MockError: Error {
@@ -322,12 +403,26 @@ private final class MockSession: PrismSession {
   var workspaceStatusHandler: (() async throws -> WorkspaceStatus)?
   var workspaceDiffResponses: [Result<Diff, Error>] = []
   var headDiffResponses: [Result<Diff, Error>] = []
+  var pluginSummaries: [PluginSummary]
+  var pluginThreadsByPluginID: [String: [ThreadRef]] = [:]
+  var attachPluginResponses: [Result<PluginSession, Error>] = []
 
   init(info: RepositoryInfo, status: WorkspaceStatus, diff: Diff = MockSession.makeDiff()) {
     self.info = info
     self.status = status
     self.workspaceDiff = diff
     self.headDiff = diff
+    self.pluginSummaries = [
+      PluginSummary(
+        id: "amp",
+        label: "Mock Amp",
+        capabilities: PluginCapabilities(
+          supportsListThreads: false,
+          supportsAttachWithoutThread: true,
+          supportsPolling: false
+        )
+      )
+    ]
   }
 
   func repositoryInfo() async throws -> RepositoryInfo {
@@ -370,6 +465,29 @@ private final class MockSession: PrismSession {
       }
     }
     return headDiff
+  }
+
+  func plugins() async throws -> [PluginSummary] {
+    pluginSummaries
+  }
+
+  func pluginThreads(pluginId: String) async throws -> [ThreadRef] {
+    pluginThreadsByPluginID[pluginId] ?? []
+  }
+
+  func attachPlugin(pluginId: String, threadId: String?) async throws -> PluginSession {
+    if !attachPluginResponses.isEmpty {
+      let response = attachPluginResponses.removeFirst()
+      switch response {
+      case let .success(session):
+        return session
+      case let .failure(error):
+        throw error
+      }
+    }
+
+    let thread = ThreadRef(id: threadId ?? "mock-thread-\(pluginId)", title: nil)
+    return PluginSession(pluginId: pluginId, sessionId: "mock-session-\(pluginId)", thread: thread)
   }
 
   static func makeDiff(files: [DiffFile] = []) -> Diff {

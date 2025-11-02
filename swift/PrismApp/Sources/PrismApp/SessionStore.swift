@@ -6,17 +6,24 @@ import PrismFFI
 @MainActor
 final class SessionStore: ObservableObject {
   private static let inlineThreadPluginID = "local-inline"
+  private static let preferredPluginOrder = ["amp"]
 
   @Published private(set) var phase: SessionPhase = .idle
   @Published private(set) var diffPhase: DiffPhase = .idle
   @Published var selectedDiffFileID: DiffFileViewModel.ID?
   @Published private(set) var storedSessions: [StoredSession] = []
+  @Published private(set) var attachModel: AttachModel?
+  @Published private(set) var attachErrorMessage: String?
+  @Published private(set) var isLoadingPlugins = false
+  @Published private(set) var isAttachingPlugin = false
+  @Published private(set) var attachedPluginSession: AttachedPluginSession?
 
   private let client: any PrismSessionClient
   private let storage: any SessionPersisting
   private var activeSession: (any PrismSession)?
   private var loadIdentifier: UUID?
   private var diffLoadIdentifier: UUID?
+  private var pluginLoadIdentifier: UUID?
 
   init(
     client: any PrismSessionClient = PrismCoreClientAdapter(),
@@ -49,9 +56,16 @@ final class SessionStore: ObservableObject {
     let previousPhase = phase
     let previousDiffPhase = diffPhase
     let previousSelection = selectedDiffFileID
+    let previousAttachModel = attachModel
+    let previousAttachError = attachErrorMessage
+    let previousAttachedPluginSession = attachedPluginSession
+    let previousPluginLoadIdentifier = pluginLoadIdentifier
+    let previousIsLoadingPlugins = isLoadingPlugins
+    let previousIsAttachingPlugin = isAttachingPlugin
     let ticket = UUID()
     loadIdentifier = ticket
     diffLoadIdentifier = nil
+    resetAttachState()
     phase = .loading(url)
     diffPhase = .idle
     selectedDiffFileID = nil
@@ -70,6 +84,8 @@ final class SessionStore: ObservableObject {
       let sessionID = ObjectIdentifier(session as AnyObject)
       await loadDiff(for: session, sessionID: sessionID, preferredSelection: nil)
       guard loadIdentifier == ticket else { return }
+      await loadPlugins(for: session, sessionID: sessionID)
+      guard loadIdentifier == ticket else { return }
       loadIdentifier = nil
     } catch {
       guard loadIdentifier == ticket else { return }
@@ -80,6 +96,12 @@ final class SessionStore: ObservableObject {
         phase = previousPhase
         diffPhase = previousDiffPhase
         selectedDiffFileID = previousSelection
+        attachModel = previousAttachModel
+        attachErrorMessage = previousAttachError
+        attachedPluginSession = previousAttachedPluginSession
+        pluginLoadIdentifier = previousPluginLoadIdentifier
+        isLoadingPlugins = previousIsLoadingPlugins
+        isAttachingPlugin = previousIsAttachingPlugin
       } else {
         activeSession = nil
         phase = .failed(Self.describe(error))
@@ -96,6 +118,7 @@ final class SessionStore: ObservableObject {
     diffPhase = .idle
     selectedDiffFileID = nil
     diffLoadIdentifier = nil
+    resetAttachState()
   }
 
   func refreshActiveSession() async {
@@ -131,6 +154,96 @@ final class SessionStore: ObservableObject {
 
   func hasActiveSession() -> Bool {
     activeSession != nil
+  }
+
+  var isPluginAttached: Bool {
+    attachedPluginSession != nil
+  }
+
+  func loadPluginsIfNeeded() async {
+    guard attachedPluginSession == nil else { return }
+    guard pluginLoadIdentifier == nil else { return }
+    guard !isLoadingPlugins else { return }
+    guard let session = activeSession else { return }
+    if attachModel != nil { return }
+    let sessionID = ObjectIdentifier(session as AnyObject)
+    await loadPlugins(for: session, sessionID: sessionID)
+  }
+
+  func reloadPlugins() async {
+    guard let session = activeSession else { return }
+    let sessionID = ObjectIdentifier(session as AnyObject)
+    await loadPlugins(for: session, sessionID: sessionID)
+  }
+
+  func selectPlugin(id: String) {
+    guard var model = attachModel else { return }
+    guard model.selectedPluginID != id else { return }
+    guard model.option(for: id) != nil else { return }
+    model.selectedPluginID = id
+    if let storedThreadID = model.storedThreadID(for: id) {
+      model.threadID = storedThreadID
+    } else {
+      model.threadID = ""
+    }
+    attachModel = model
+    attachErrorMessage = nil
+  }
+
+  func updateThreadID(_ threadID: String) {
+    guard var model = attachModel else { return }
+    guard model.threadID != threadID else { return }
+    model.threadID = threadID
+    attachModel = model
+    attachErrorMessage = nil
+  }
+
+  func attachSelectedPlugin() async {
+    guard var model = attachModel else { return }
+    guard let option = model.option(for: model.selectedPluginID) else { return }
+    guard let session = activeSession else { return }
+
+    let trimmedThreadID = model.threadID.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmedThreadID.isEmpty && !option.supportsAttachWithoutThread {
+      attachErrorMessage = "Thread ID required for \(option.label)."
+      return
+    }
+
+    isAttachingPlugin = true
+    attachErrorMessage = nil
+    let expectedSessionID = ObjectIdentifier(session as AnyObject)
+    defer { isAttachingPlugin = false }
+
+    do {
+      let pluginSession = try await session.attachPlugin(
+        pluginId: option.id,
+        threadId: trimmedThreadID.isEmpty ? nil : trimmedThreadID
+      )
+
+      guard let currentSession = activeSession else { return }
+      guard ObjectIdentifier(currentSession as AnyObject) == expectedSessionID else { return }
+
+      let attached = AttachedPluginSession(summary: option.summary, session: pluginSession)
+      attachedPluginSession = attached
+
+      if let thread = pluginSession.thread {
+        model.threadID = thread.id
+        model.storedThreadIDs[option.id] = thread.id
+      } else {
+        model.threadID = trimmedThreadID
+        model.storedThreadIDs[option.id] = trimmedThreadID
+      }
+
+      attachModel = model
+      persistAttachedThread(pluginID: pluginSession.pluginId, thread: pluginSession.thread)
+    } catch {
+      guard let currentSession = activeSession else {
+        attachErrorMessage = Self.describe(error)
+        return
+      }
+      guard ObjectIdentifier(currentSession as AnyObject) == expectedSessionID else { return }
+      attachErrorMessage = Self.describe(error)
+    }
   }
 
   private var activeRepositoryPath: String? {
@@ -246,6 +359,54 @@ final class SessionStore: ObservableObject {
     }
   }
 
+  private func loadPlugins(
+    for session: any PrismSession,
+    sessionID: ObjectIdentifier
+  ) async {
+    let ticket = UUID()
+    pluginLoadIdentifier = ticket
+    isLoadingPlugins = true
+    attachModel = nil
+    attachErrorMessage = nil
+
+    do {
+      let summaries = try await session.plugins()
+      guard pluginLoadIdentifier == ticket else { return }
+      guard let currentSession = activeSession else { return }
+      guard ObjectIdentifier(currentSession as AnyObject) == sessionID else { return }
+
+      guard !summaries.isEmpty else {
+        attachModel = nil
+        attachErrorMessage = "No plugins are available for this workspace."
+        isLoadingPlugins = false
+        pluginLoadIdentifier = nil
+        return
+      }
+
+      let options = makePluginOptions(from: summaries)
+      let repositoryPath = activeRepositoryPath
+      if let model = makeAttachModel(options: options, repositoryPath: repositoryPath) {
+        attachModel = model
+        attachErrorMessage = nil
+      } else {
+        attachModel = nil
+        attachErrorMessage = "Unable to configure plugin attachments."
+      }
+
+      isLoadingPlugins = false
+      pluginLoadIdentifier = nil
+    } catch {
+      guard pluginLoadIdentifier == ticket else { return }
+      guard let currentSession = activeSession else { return }
+      guard ObjectIdentifier(currentSession as AnyObject) == sessionID else { return }
+
+      attachModel = nil
+      attachErrorMessage = Self.describe(error)
+      isLoadingPlugins = false
+      pluginLoadIdentifier = nil
+    }
+  }
+
   private static func describe(_ error: Error) -> String {
     if let coreError = error as? PrismCoreError {
       switch coreError {
@@ -262,6 +423,92 @@ final class SessionStore: ObservableObject {
       }
     }
     return error.localizedDescription
+  }
+
+  private func makePluginOptions(from summaries: [PluginSummary]) -> [AttachModel.PluginOption] {
+    summaries
+      .map(AttachModel.PluginOption.init)
+      .sorted { lhs, rhs in
+        let lhsIndex = pluginSortIndex(for: lhs.id)
+        let rhsIndex = pluginSortIndex(for: rhs.id)
+        if lhsIndex == rhsIndex {
+          return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
+        }
+        return lhsIndex < rhsIndex
+      }
+  }
+
+  private func pluginSortIndex(for pluginID: String) -> Int {
+    if let index = SessionStore.preferredPluginOrder.firstIndex(of: pluginID) {
+      return index
+    }
+    return SessionStore.preferredPluginOrder.count
+  }
+
+  private func makeAttachModel(
+    options: [AttachModel.PluginOption],
+    repositoryPath: String?
+  ) -> AttachModel? {
+    guard !options.isEmpty else { return nil }
+
+    let defaultOption = options.first { option in
+      SessionStore.preferredPluginOrder.contains(option.id)
+    } ?? options.first
+
+    guard let selected = defaultOption else { return nil }
+
+    var storedThreadIDs: [String: String] = [:]
+    if let repositoryPath {
+      do {
+        for option in options {
+          let threads = try storage.threads(for: repositoryPath, pluginID: option.id)
+          if let thread = threads.first, let externalID = thread.externalID {
+            storedThreadIDs[option.id] = externalID
+          }
+        }
+      } catch {
+        NSLog("Failed to load stored plugin threads: \(error)")
+      }
+    }
+
+    let initialThreadID = storedThreadIDs[selected.id] ?? ""
+
+    return AttachModel(
+      options: options,
+      selectedPluginID: selected.id,
+      threadID: initialThreadID,
+      storedThreadIDs: storedThreadIDs
+    )
+  }
+
+  private func persistAttachedThread(pluginID: String, thread: ThreadRef?) {
+    guard let repositoryPath = activeRepositoryPath else { return }
+    guard let thread else { return }
+
+    do {
+      let payload = SessionStorage.ThreadPayload(
+        id: UUID(),
+        externalID: thread.id,
+        title: thread.title,
+        createdAt: Date(),
+        lastUpdated: Date(),
+        comments: []
+      )
+      _ = try storage.replaceThreads(for: repositoryPath, pluginID: pluginID, threads: [payload])
+
+      storedSessions = try storage.fetchSessions()
+    } catch {
+      NSLog("Failed to persist plugin thread: \(error)")
+    }
+  }
+
+  private func resetAttachState() {
+    attachModel = nil
+    attachErrorMessage = nil
+    isLoadingPlugins = false
+    isAttachingPlugin = false
+    attachedPluginSession = nil
+    pluginLoadIdentifier = nil
   }
 
   private func makeViewModel(info: RepositoryInfo, status: WorkspaceStatus) -> SessionViewModel {
@@ -359,6 +606,38 @@ struct SessionViewModel: Equatable {
   var hasUncommittedChanges: Bool
 }
 
+struct AttachModel: Equatable {
+  struct PluginOption: Identifiable, Equatable {
+    var summary: PluginSummary
+
+    var id: String { summary.id }
+    var label: String { summary.label }
+    var supportsAttachWithoutThread: Bool { summary.capabilities.supportsAttachWithoutThread }
+  }
+
+  var options: [PluginOption]
+  var selectedPluginID: String
+  var threadID: String
+  var storedThreadIDs: [String: String]
+
+  func option(for id: String) -> PluginOption? {
+    options.first { $0.id == id }
+  }
+
+  func storedThreadID(for id: String) -> String? {
+    storedThreadIDs[id]
+  }
+}
+
+struct AttachedPluginSession: Equatable {
+  var summary: PluginSummary
+  var session: PluginSession
+
+  var thread: ThreadRef? {
+    session.thread
+  }
+}
+
 protocol PrismSessionClient {
   func openSession(at path: String) async throws -> any PrismSession
 }
@@ -368,6 +647,9 @@ protocol PrismSession: AnyObject {
   func workspaceStatus() async throws -> WorkspaceStatus
   func diffWorkspace() async throws -> Diff
   func diffHead() async throws -> Diff
+  func plugins() async throws -> [PluginSummary]
+  func pluginThreads(pluginId: String) async throws -> [ThreadRef]
+  func attachPlugin(pluginId: String, threadId: String?) async throws -> PluginSession
 }
 
 struct PrismCoreClientAdapter: PrismSessionClient {
@@ -388,6 +670,21 @@ extension PrismCoreSession: PrismSession {}
   extension SessionStore {
     func injectPreviewState(phase: SessionPhase) {
       self.phase = phase
+    }
+
+    func injectPreviewAttachment() {
+      let summary = PluginSummary(
+        id: "amp",
+        label: "Sourcegraph Amp",
+        capabilities: PluginCapabilities(
+          supportsListThreads: true,
+          supportsAttachWithoutThread: true,
+          supportsPolling: true
+        )
+      )
+      let thread = ThreadRef(id: "T-preview", title: "Preview Thread")
+      let session = PluginSession(pluginId: summary.id, sessionId: "preview-session", thread: thread)
+      attachedPluginSession = AttachedPluginSession(summary: summary, session: session)
     }
   }
 #endif

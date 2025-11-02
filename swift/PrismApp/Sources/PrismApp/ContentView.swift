@@ -10,8 +10,13 @@ struct ContentView: View {
     case .loading(let url):
       LoadingView(repositoryURL: url)
     case .ready(let viewModel):
-      SessionShellView(viewModel: viewModel)
-        .environmentObject(sessionStore)
+      if sessionStore.isPluginAttached {
+        SessionShellView(viewModel: viewModel)
+          .environmentObject(sessionStore)
+      } else {
+        AttachFlowView(viewModel: viewModel)
+          .environmentObject(sessionStore)
+      }
     case .failed(let message):
       ErrorView(message: message, retry: sessionStore.presentRepositoryPicker)
     }
@@ -119,6 +124,7 @@ private struct ErrorView: View {
           )
         )
       )
+      store.injectPreviewAttachment()
       return store
     }
   }

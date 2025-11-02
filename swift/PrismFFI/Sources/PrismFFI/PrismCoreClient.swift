@@ -115,6 +115,18 @@ public final class PrismCoreSession {
         try await call { try self.coreSession.diffForRange(range: range) }
     }
 
+    public func plugins() async throws -> [PluginSummary] {
+        try await call { self.coreSession.plugins() }
+    }
+
+    public func pluginThreads(pluginId: String) async throws -> [ThreadRef] {
+        try await call { try self.coreSession.pluginThreads(pluginId: pluginId) }
+    }
+
+    public func attachPlugin(pluginId: String, threadId: String?) async throws -> PluginSession {
+        try await call { try self.coreSession.attachPlugin(pluginId: pluginId, threadId: threadId) }
+    }
+
     private func call<T>(_ work: @escaping () throws -> T) async throws -> T {
         let queue = self.queue
         return try await withCheckedThrowingContinuation { continuation in
