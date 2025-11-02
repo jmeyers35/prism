@@ -64,6 +64,13 @@ struct AttachFlowView: View {
     )
 
     let selectedOption = model.option(for: model.selectedPluginID)
+    let storedThreads = model.storedThreads(for: model.selectedPluginID)
+    let providerThreads = model.pluginThreads(for: model.selectedPluginID)
+    let currentThreadLabel = threadDisplayText(
+      for: model.threadID,
+      storedThreads: storedThreads,
+      providerThreads: providerThreads
+    )
     let threadPlaceholder = selectedOption?.supportsAttachWithoutThread == true
       ? "Paste existing thread ID (optional)"
       : "Paste thread ID (required)"
@@ -77,6 +84,90 @@ struct AttachFlowView: View {
       }
       .pickerStyle(.menu)
       .frame(maxWidth: 320)
+
+      if !storedThreads.isEmpty {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Recently linked threads")
+            .font(.subheadline.weight(.semibold))
+
+          Menu {
+            ForEach(storedThreads) { thread in
+              Button {
+                sessionStore.selectStoredThread(id: thread.id)
+              } label: {
+                HStack {
+                  Text(thread.title ?? thread.id)
+                  if thread.id == model.threadID {
+                    Spacer()
+                    Image(systemName: "checkmark")
+                  }
+                }
+              }
+            }
+
+            if !model.threadID.isEmpty {
+              Divider()
+              Button("Clear selection") {
+                sessionStore.updateThreadID("")
+              }
+            }
+          } label: {
+            HStack {
+              Text(model.threadID.isEmpty ? "Choose a thread" : currentThreadLabel)
+              Spacer(minLength: 4)
+              Image(systemName: "chevron.down")
+                .font(.footnote)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+          }
+        }
+      }
+
+      if let selectedOption, selectedOption.summary.capabilities.supportsListThreads {
+        VStack(alignment: .leading, spacing: 8) {
+          if sessionStore.isLoadingPluginThreads {
+            ProgressView("Fetching threads…")
+              .progressViewStyle(.circular)
+          } else {
+            Button("Browse threads from \(selectedOption.label)") {
+              Task { await sessionStore.loadPluginThreads() }
+            }
+            .buttonStyle(.bordered)
+          }
+
+          if !providerThreads.isEmpty {
+            Menu {
+              ForEach(providerThreads) { thread in
+                Button {
+                  sessionStore.selectPluginThread(id: thread.id)
+                } label: {
+                  HStack {
+                    Text(thread.title ?? thread.id)
+                    if thread.id == model.threadID {
+                      Spacer()
+                      Image(systemName: "checkmark")
+                    }
+                  }
+                }
+              }
+            } label: {
+              HStack {
+                Text(model.threadID.isEmpty ? "Select fetched thread" : currentThreadLabel)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+                  .font(.footnote)
+              }
+              .padding(.horizontal, 12)
+              .padding(.vertical, 6)
+              .background(Color(nsColor: .controlBackgroundColor))
+              .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+          }
+        }
+      }
 
       VStack(alignment: .leading, spacing: 4) {
         TextField(threadPlaceholder, text: threadBinding)
@@ -112,5 +203,22 @@ struct AttachFlowView: View {
       .frame(maxWidth: 200)
       .disabled(sessionStore.isAttachingPlugin || model.selectedPluginID.isEmpty)
     }
+  }
+}
+
+private extension AttachFlowView {
+  func threadDisplayText(
+    for id: String,
+    storedThreads: [AttachModel.StoredThread],
+    providerThreads: [AttachModel.PluginThread]
+  ) -> String {
+    guard !id.isEmpty else { return "" }
+    if let stored = storedThreads.first(where: { $0.id == id }) {
+      return stored.title ?? stored.id
+    }
+    if let fetched = providerThreads.first(where: { $0.id == id }) {
+      return fetched.title ?? fetched.id
+    }
+    return id
   }
 }

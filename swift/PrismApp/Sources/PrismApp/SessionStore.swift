@@ -15,6 +15,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var attachModel: AttachModel?
   @Published private(set) var attachErrorMessage: String?
   @Published private(set) var isLoadingPlugins = false
+  @Published private(set) var isLoadingPluginThreads = false
   @Published private(set) var isAttachingPlugin = false
   @Published private(set) var attachedPluginSession: AttachedPluginSession?
 
@@ -24,6 +25,7 @@ final class SessionStore: ObservableObject {
   private var loadIdentifier: UUID?
   private var diffLoadIdentifier: UUID?
   private var pluginLoadIdentifier: UUID?
+  private var pluginThreadsLoadIdentifier: UUID?
 
   init(
     client: any PrismSessionClient = PrismCoreClientAdapter(),
@@ -61,7 +63,9 @@ final class SessionStore: ObservableObject {
     let previousAttachedPluginSession = attachedPluginSession
     let previousPluginLoadIdentifier = pluginLoadIdentifier
     let previousIsLoadingPlugins = isLoadingPlugins
+    let previousIsLoadingPluginThreads = isLoadingPluginThreads
     let previousIsAttachingPlugin = isAttachingPlugin
+    let previousPluginThreadsLoadIdentifier = pluginThreadsLoadIdentifier
     let ticket = UUID()
     loadIdentifier = ticket
     diffLoadIdentifier = nil
@@ -101,7 +105,9 @@ final class SessionStore: ObservableObject {
         attachedPluginSession = previousAttachedPluginSession
         pluginLoadIdentifier = previousPluginLoadIdentifier
         isLoadingPlugins = previousIsLoadingPlugins
+        isLoadingPluginThreads = previousIsLoadingPluginThreads
         isAttachingPlugin = previousIsAttachingPlugin
+        pluginThreadsLoadIdentifier = previousPluginThreadsLoadIdentifier
       } else {
         activeSession = nil
         phase = .failed(Self.describe(error))
@@ -183,9 +189,13 @@ final class SessionStore: ObservableObject {
     model.selectedPluginID = id
     if let storedThreadID = model.storedThreadID(for: id) {
       model.threadID = storedThreadID
+    } else if let suggested = model.pluginThreads(for: id).first?.id {
+      model.threadID = suggested
     } else {
       model.threadID = ""
     }
+    isLoadingPluginThreads = false
+    pluginThreadsLoadIdentifier = nil
     attachModel = model
     attachErrorMessage = nil
   }
@@ -194,8 +204,101 @@ final class SessionStore: ObservableObject {
     guard var model = attachModel else { return }
     guard model.threadID != threadID else { return }
     model.threadID = threadID
+    if threadID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+       let option = model.option(for: model.selectedPluginID) {
+      model.storedThreadIDs.removeValue(forKey: option.id)
+    }
     attachModel = model
     attachErrorMessage = nil
+  }
+
+  func selectStoredThread(id: String) {
+    guard var model = attachModel else { return }
+    guard let option = model.option(for: model.selectedPluginID) else { return }
+    guard model.storedThreads(for: option.id).contains(where: { $0.id == id }) else { return }
+    model.threadID = id
+    model.storedThreadIDs[option.id] = id
+    attachModel = model
+    attachErrorMessage = nil
+  }
+
+  func selectPluginThread(id: String) {
+    guard var model = attachModel else { return }
+    guard let option = model.option(for: model.selectedPluginID) else { return }
+    guard model.pluginThreads(for: option.id).contains(where: { $0.id == id }) else { return }
+    model.threadID = id
+    model.storedThreadIDs[option.id] = id
+    attachModel = model
+    attachErrorMessage = nil
+  }
+
+  func loadPluginThreads() async {
+    guard let model = attachModel else { return }
+    guard let option = model.option(for: model.selectedPluginID) else { return }
+    guard option.summary.capabilities.supportsListThreads else { return }
+    guard let session = activeSession else { return }
+
+    isLoadingPluginThreads = true
+    attachErrorMessage = nil
+    let ticket = UUID()
+    pluginThreadsLoadIdentifier = ticket
+    let expectedSessionID = ObjectIdentifier(session as AnyObject)
+    let pluginID = option.id
+
+    do {
+      let threads = try await session.pluginThreads(pluginId: pluginID)
+
+      guard pluginThreadsLoadIdentifier == ticket else {
+        return
+      }
+      guard let currentSession = activeSession else {
+        isLoadingPluginThreads = false
+        pluginThreadsLoadIdentifier = nil
+        return
+      }
+      guard ObjectIdentifier(currentSession as AnyObject) == expectedSessionID else {
+        isLoadingPluginThreads = false
+        pluginThreadsLoadIdentifier = nil
+        return
+      }
+      guard var currentModel = attachModel else {
+        isLoadingPluginThreads = false
+        pluginThreadsLoadIdentifier = nil
+        return
+      }
+      guard currentModel.selectedPluginID == pluginID else {
+        isLoadingPluginThreads = false
+        pluginThreadsLoadIdentifier = nil
+        return
+      }
+
+      let summaries = threads.map { AttachModel.PluginThread(id: $0.id, title: $0.title) }
+      currentModel.pluginThreads[pluginID] = summaries
+      if currentModel.threadID.isEmpty, let first = summaries.first {
+        currentModel.threadID = first.id
+      }
+      attachModel = currentModel
+      attachErrorMessage = nil
+    } catch {
+      guard pluginThreadsLoadIdentifier == ticket else {
+        return
+      }
+      guard let currentSession = activeSession else {
+        attachErrorMessage = Self.describe(error)
+        isLoadingPluginThreads = false
+        pluginThreadsLoadIdentifier = nil
+        return
+      }
+      guard ObjectIdentifier(currentSession as AnyObject) == expectedSessionID else {
+        isLoadingPluginThreads = false
+        pluginThreadsLoadIdentifier = nil
+        return
+      }
+      attachErrorMessage = Self.describe(error)
+    }
+
+    isLoadingPluginThreads = false
+    pluginThreadsLoadIdentifier = nil
   }
 
   func attachSelectedPlugin() async {
@@ -226,16 +329,44 @@ final class SessionStore: ObservableObject {
       let attached = AttachedPluginSession(summary: option.summary, session: pluginSession)
       attachedPluginSession = attached
 
+      let resolvedThreadID: String
       if let thread = pluginSession.thread {
-        model.threadID = thread.id
-        model.storedThreadIDs[option.id] = thread.id
+        resolvedThreadID = thread.id
       } else {
-        model.threadID = trimmedThreadID
-        model.storedThreadIDs[option.id] = trimmedThreadID
+        resolvedThreadID = trimmedThreadID
+      }
+
+      model.threadID = resolvedThreadID
+      if !resolvedThreadID.isEmpty {
+        model.storedThreadIDs[option.id] = resolvedThreadID
+
+        if let thread = pluginSession.thread {
+          let pluginSummary = AttachModel.PluginThread(id: thread.id, title: thread.title)
+          var pluginThreads = model.pluginThreads[option.id] ?? []
+          if let index = pluginThreads.firstIndex(where: { $0.id == pluginSummary.id }) {
+            pluginThreads[index] = pluginSummary
+          } else {
+            pluginThreads.insert(pluginSummary, at: 0)
+          }
+          model.pluginThreads[option.id] = pluginThreads
+        }
+
+        let storedSummary = AttachModel.StoredThread(id: resolvedThreadID, title: pluginSession.thread?.title)
+        var storedThreads = model.storedThreads[option.id] ?? []
+        if let index = storedThreads.firstIndex(where: { $0.id == storedSummary.id }) {
+          storedThreads[index] = storedSummary
+        } else {
+          storedThreads.insert(storedSummary, at: 0)
+        }
+        model.storedThreads[option.id] = storedThreads
       }
 
       attachModel = model
-      persistAttachedThread(pluginID: pluginSession.pluginId, thread: pluginSession.thread)
+      persistAttachedThread(
+        pluginID: pluginSession.pluginId,
+        thread: pluginSession.thread,
+        fallbackID: resolvedThreadID
+      )
     } catch {
       guard let currentSession = activeSession else {
         attachErrorMessage = Self.describe(error)
@@ -366,8 +497,10 @@ final class SessionStore: ObservableObject {
     let ticket = UUID()
     pluginLoadIdentifier = ticket
     isLoadingPlugins = true
+    isLoadingPluginThreads = false
     attachModel = nil
     attachErrorMessage = nil
+    pluginThreadsLoadIdentifier = nil
 
     do {
       let summaries = try await session.plugins()
@@ -394,6 +527,7 @@ final class SessionStore: ObservableObject {
       }
 
       isLoadingPlugins = false
+      isLoadingPluginThreads = false
       pluginLoadIdentifier = nil
     } catch {
       guard pluginLoadIdentifier == ticket else { return }
@@ -403,6 +537,7 @@ final class SessionStore: ObservableObject {
       attachModel = nil
       attachErrorMessage = Self.describe(error)
       isLoadingPlugins = false
+      isLoadingPluginThreads = false
       pluginLoadIdentifier = nil
     }
   }
@@ -458,12 +593,17 @@ final class SessionStore: ObservableObject {
     guard let selected = defaultOption else { return nil }
 
     var storedThreadIDs: [String: String] = [:]
+    var storedThreads: [String: [AttachModel.StoredThread]] = [:]
     if let repositoryPath {
       do {
         for option in options {
           let threads = try storage.threads(for: repositoryPath, pluginID: option.id)
-          if let thread = threads.first, let externalID = thread.externalID {
-            storedThreadIDs[option.id] = externalID
+          let summaries = threads.compactMap(storedThreadSummary(from:))
+          if !summaries.isEmpty {
+            storedThreads[option.id] = summaries
+            if let firstID = summaries.first?.id {
+              storedThreadIDs[option.id] = firstID
+            }
           }
         }
       } catch {
@@ -477,26 +617,45 @@ final class SessionStore: ObservableObject {
       options: options,
       selectedPluginID: selected.id,
       threadID: initialThreadID,
-      storedThreadIDs: storedThreadIDs
+      storedThreadIDs: storedThreadIDs,
+      storedThreads: storedThreads,
+      pluginThreads: [:]
     )
   }
 
-  private func persistAttachedThread(pluginID: String, thread: ThreadRef?) {
+  private func persistAttachedThread(pluginID: String, thread: ThreadRef?, fallbackID: String) {
     guard let repositoryPath = activeRepositoryPath else { return }
-    guard let thread else { return }
+
+    let externalID = thread?.id ?? fallbackID
+    guard !externalID.isEmpty else { return }
 
     do {
-      let payload = SessionStorage.ThreadPayload(
-        id: UUID(),
-        externalID: thread.id,
-        title: thread.title,
-        createdAt: Date(),
-        lastUpdated: Date(),
-        comments: []
+      let existingThreads = try storage.threads(for: repositoryPath, pluginID: pluginID)
+      var payloads = existingThreads.map(threadPayload(from:))
+
+      let existingThreadIndex = existingThreads.firstIndex { $0.externalID == externalID }
+      let existingThread = existingThreadIndex.map { existingThreads[$0] }
+      let now = Date()
+
+      let newPayload = SessionStorage.ThreadPayload(
+        id: existingThread?.id ?? UUID(),
+        externalID: externalID,
+        title: thread?.title ?? existingThread?.title,
+        createdAt: existingThread?.createdAt ?? now,
+        lastUpdated: now,
+        comments: existingThread.map(commentPayloads(from:)) ?? []
       )
-      _ = try storage.replaceThreads(for: repositoryPath, pluginID: pluginID, threads: [payload])
+
+      if let index = payloads.firstIndex(where: { $0.externalID == externalID }) {
+        payloads[index] = newPayload
+      } else {
+        payloads.insert(newPayload, at: 0)
+      }
+
+      _ = try storage.replaceThreads(for: repositoryPath, pluginID: pluginID, threads: payloads)
 
       storedSessions = try storage.fetchSessions()
+      refreshStoredThreads(for: pluginID, selectedThreadID: externalID)
     } catch {
       NSLog("Failed to persist plugin thread: \(error)")
     }
@@ -506,9 +665,11 @@ final class SessionStore: ObservableObject {
     attachModel = nil
     attachErrorMessage = nil
     isLoadingPlugins = false
+    isLoadingPluginThreads = false
     isAttachingPlugin = false
     attachedPluginSession = nil
     pluginLoadIdentifier = nil
+    pluginThreadsLoadIdentifier = nil
   }
 
   private func makeViewModel(info: RepositoryInfo, status: WorkspaceStatus) -> SessionViewModel {
@@ -537,6 +698,69 @@ final class SessionStore: ObservableObject {
     }
 
     return session.threads.compactMap(inlineThreadViewModel(from:))
+  }
+
+  private func refreshStoredThreads(for pluginID: String, selectedThreadID: String) {
+    guard var model = attachModel else { return }
+    guard let repositoryPath = activeRepositoryPath else { return }
+
+    do {
+      let threads = try storage.threads(for: repositoryPath, pluginID: pluginID)
+      let summaries = threads.compactMap(storedThreadSummary(from:))
+      if !summaries.isEmpty {
+        model.storedThreads[pluginID] = summaries
+      } else {
+        model.storedThreads.removeValue(forKey: pluginID)
+      }
+      model.storedThreadIDs[pluginID] = selectedThreadID
+      attachModel = model
+    } catch {
+      NSLog("Failed to refresh stored plugin threads: \(error)")
+    }
+  }
+
+  private func storedThreadSummary(from thread: StoredSession.StoredThread) -> AttachModel.StoredThread? {
+    guard let externalID = thread.externalID else { return nil }
+    return AttachModel.StoredThread(id: externalID, title: thread.title ?? externalID)
+  }
+
+  private func threadPayload(from thread: StoredSession.StoredThread) -> SessionStorage.ThreadPayload {
+    SessionStorage.ThreadPayload(
+      id: thread.id,
+      externalID: thread.externalID,
+      title: thread.title,
+      createdAt: thread.createdAt,
+      lastUpdated: thread.lastUpdated,
+      comments: thread.comments.map { comment in
+        SessionStorage.CommentPayload(
+          id: comment.id,
+          externalID: comment.externalID,
+          authorName: comment.authorName,
+          body: comment.body,
+          createdAt: comment.createdAt,
+          filePath: comment.filePath,
+          lineNumber: comment.lineNumber,
+          columnNumber: comment.columnNumber,
+          diffSide: comment.diffSide
+        )
+      }
+    )
+  }
+
+  private func commentPayloads(from thread: StoredSession.StoredThread) -> [SessionStorage.CommentPayload] {
+    thread.comments.map { comment in
+      SessionStorage.CommentPayload(
+        id: comment.id,
+        externalID: comment.externalID,
+        authorName: comment.authorName,
+        body: comment.body,
+        createdAt: comment.createdAt,
+        filePath: comment.filePath,
+        lineNumber: comment.lineNumber,
+        columnNumber: comment.columnNumber,
+        diffSide: comment.diffSide
+      )
+    }
   }
 
   private func inlineThreadViewModel(from thread: StoredSession.StoredThread) -> InlineThreadViewModel? {
@@ -615,10 +839,22 @@ struct AttachModel: Equatable {
     var supportsAttachWithoutThread: Bool { summary.capabilities.supportsAttachWithoutThread }
   }
 
+  struct StoredThread: Identifiable, Equatable {
+    var id: String
+    var title: String?
+  }
+
+  struct PluginThread: Identifiable, Equatable {
+    var id: String
+    var title: String?
+  }
+
   var options: [PluginOption]
   var selectedPluginID: String
   var threadID: String
   var storedThreadIDs: [String: String]
+  var storedThreads: [String: [StoredThread]]
+  var pluginThreads: [String: [PluginThread]]
 
   func option(for id: String) -> PluginOption? {
     options.first { $0.id == id }
@@ -626,6 +862,14 @@ struct AttachModel: Equatable {
 
   func storedThreadID(for id: String) -> String? {
     storedThreadIDs[id]
+  }
+
+  func storedThreads(for id: String) -> [StoredThread] {
+    storedThreads[id] ?? []
+  }
+
+  func pluginThreads(for id: String) -> [PluginThread] {
+    pluginThreads[id] ?? []
   }
 }
 

@@ -9,6 +9,57 @@ final class SessionStoreTests: XCTestCase {
     return SessionStore(client: client, storage: storage)
   }
 
+  func testSelectStoredThreadUsesStoredID() async throws {
+    let session = MockSession(
+      info: RepositoryInfo(root: "/tmp/prism", defaultBranch: "main"),
+      status: WorkspaceStatus(currentBranch: "feature/prism", dirty: true)
+    )
+
+    let client = MockSessionClient(responses: [.success(session)])
+    let store = makeStore(client: client)
+
+    await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
+    await store.attachSelectedPlugin()
+
+    guard let storedID = store.attachModel?.storedThreads(for: "amp").first?.id else {
+      return XCTFail("Expected stored thread ID")
+    }
+
+    store.updateThreadID("manual")
+    store.selectStoredThread(id: storedID)
+
+    XCTAssertEqual(store.attachModel?.threadID, storedID)
+  }
+
+  func testLoadPluginThreadsPopulatesModel() async throws {
+    let session = MockSession(
+      info: RepositoryInfo(root: "/tmp/prism", defaultBranch: "main"),
+      status: WorkspaceStatus(currentBranch: "feature/prism", dirty: true)
+    )
+    session.pluginSummaries = [
+      PluginSummary(
+        id: "amp",
+        label: "Mock Amp",
+        capabilities: PluginCapabilities(
+          supportsListThreads: true,
+          supportsAttachWithoutThread: true,
+          supportsPolling: false
+        )
+      )
+    ]
+    session.pluginThreadsByPluginID["amp"] = [ThreadRef(id: "AMP-1", title: "Inbox thread")]
+
+    let client = MockSessionClient(responses: [.success(session)])
+    let store = makeStore(client: client)
+
+    await store.openSession(at: URL(fileURLWithPath: "/tmp/prism"))
+
+    await store.loadPluginThreads()
+
+    XCTAssertEqual(store.attachModel?.pluginThreads(for: "amp").first?.id, "AMP-1")
+    XCTAssertEqual(store.attachModel?.threadID, "AMP-1")
+  }
+
   func testOpenSessionSuccess() async throws {
     let session = MockSession(
       info: RepositoryInfo(root: "/tmp/prism", defaultBranch: "main"),
@@ -38,11 +89,13 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertNil(store.selectedDiffFileID)
 
     XCTAssertEqual(store.attachModel?.selectedPluginID, "amp")
+    XCTAssertEqual(store.attachModel?.storedThreads(for: "amp").count ?? 0, 0)
     XCTAssertNil(store.attachedPluginSession)
 
     await store.attachSelectedPlugin()
     XCTAssertNotNil(store.attachedPluginSession)
     XCTAssertTrue(store.isPluginAttached)
+    XCTAssertEqual(store.attachModel?.storedThreads(for: "amp").first?.id, "mock-thread-amp")
   }
 
   func testOpenSessionFailure() async {
